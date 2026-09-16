@@ -16,7 +16,7 @@ Jenkins Shared Library implementing a full DevSecOps pipeline: build, unit tests
 8. [Step 4 – First run](#8-step-4--first-run)
 9. [config.yaml reference](#9-configyaml-reference)
 10. [Pipeline stages](#10-pipeline-stages)
-11. [Policy thresholds (defaults)](#11-policy-thresholds-defaults)
+11. [Policy thresholds and project overrides](#11-policy-thresholds-and-project-overrides)
 12. [Advanced: using library methods directly](#12-advanced-using-library-methods-directly)
 13. [Supported build tools](#13-supported-build-tools)
 14. [Supported deployment targets](#14-supported-deployment-targets)
@@ -638,7 +638,7 @@ The gate covers SAST, SCA, Nexus IQ, DAST and line coverage. Low severity findin
 
 ---
 
-## 11. Policy thresholds (defaults)
+## 11. Policy thresholds and project overrides
 
 The thresholds for SAST, SCA, Nexus IQ and coverage **may be raised per project** in `config.yaml`, which only buys room to keep working on the RD environment. The values below stay the library policy: while they are exceeded the artifact is not published to Nexus and the QC deployment is blocked. DAST thresholds and all timeouts can only be changed by the library team.
 
