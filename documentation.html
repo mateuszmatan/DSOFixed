@@ -1,0 +1,431 @@
+key">type</span>: <span class="yaml-val">local</span>
+            <span class="yaml-key">job</span>:  <span class="str">"my-app/performance-tests"</span>
+            <span class="yaml-key">timeoutMin</span>: <span class="num-c">120</span>
+
+    <span class="yaml-key">deploy</span>:
+      <span class="yaml-key">vm</span>:
+        <span class="yaml-key">rd</span>:
+          <span class="yaml-key">host</span>:         <span class="str">"rdserver.example.com"</span>
+          <span class="yaml-key">user</span>:         <span class="str">"taadmin"</span>
+          <span class="yaml-key">deployDir</span>:    <span class="str">"/opt/app/deployment"</span>
+          <span class="yaml-key">deployScript</span>: <span class="str">"scripts/deployment/deploy.sh"</span>
+          <span class="yaml-key">versionFile</span>:  <span class="str">"scripts/deployment/version.properties"</span>
+        <span class="yaml-key">qc</span>:
+          <span class="yaml-key">host</span>:         <span class="str">"qcserver.example.com"</span>
+          <span class="yaml-key">user</span>:         <span class="str">"taadmin"</span>
+          <span class="yaml-key">deployDir</span>:    <span class="str">"/opt/app/deployment"</span>
+          <span class="yaml-key">deployScript</span>: <span class="str">"scripts/deployment/deploy.sh"</span>
+          <span class="yaml-key">versionFile</span>:  <span class="str">"scripts/deployment/version.properties"</span></code></pre>
+
+  <div class="callout danger">
+    <span class="callout-icon">✕</span>
+    <div class="callout-body"><strong>Required fields:</strong> <code>asoc.keyId</code>, <code>asoc.keySecret</code>, and <code>appId</code> are mandatory for every project. The pipeline fails immediately at stage 1 if they are missing. Obtain ASoC credentials from the HCL AppScan on Cloud portal under API key settings.</div>
+  </div>
+</div>
+
+<!-- ── STEP 3: JOB ── -->
+<div class="section">
+  <h2><span class="num">7</span> Step 3 — Configure the Jenkins job</h2>
+
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div class="step-body"><p>Create a new <strong>Pipeline</strong> job in Jenkins.</p></div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-body"><p>In the <strong>Pipeline</strong> section select <strong>Pipeline script from SCM</strong>.</p></div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-body"><p>Set <strong>SCM</strong> to <strong>Git</strong> and enter your project repository URL and credentials.</p></div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-body"><p>Set <strong>Branch Specifier</strong> to your default branch, e.g. <code>*/main</code>.</p></div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-body"><p>Set <strong>Script Path</strong> to <code>Jenkinsfile</code>.</p></div></div>
+    <div class="step"><div class="step-num">6</div><div class="step-body"><p>Click <strong>Save</strong>. No environment variables need to be set in the job — everything comes from <code>config.yaml</code>.</p></div></div>
+  </div>
+
+  <h3>Build parameters</h3>
+  <p>The library automatically adds one boolean parameter to the job (visible after the first run). Security violations always fail the pipeline, a project raises its own thresholds in <code>config.yaml</code> instead:</p>
+  <table>
+    <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>DEPLOY_HIGHER_ENV</code></td><td><code>false</code></td><td>Deploy to QC environment after all tests pass. Only active when the library security policy is met.</td></tr>
+  </table>
+</div>
+
+<!-- ── STEP 4: FIRST RUN ── -->
+<div class="section">
+  <h2><span class="num">8</span> Step 4 — First run</h2>
+
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div class="step-body"><p>Open the pipeline job and click <strong>Build Now</strong>.</p></div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-body"><p>Watch the <strong>Stage View</strong> — each stage turns green on success, red on failure.</p></div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-body"><p>After the build finishes, click <strong>Pipeline Report</strong> in the left sidebar to view the HTML security report.</p></div></div>
+  </div>
+
+  <h3>What to expect on first run</h3>
+  <ul>
+    <li><strong>Stage 1</strong> checks out your code and reads <code>config.yaml</code>. A clear error is shown if the file is missing or malformed.</li>
+    <li><strong>Stage 5 (SAST)</strong> uploads compiled code to ASoC and waits for results — typically 20–50 minutes on first run.</li>
+    <li><strong>Stage 11 (DAST)</strong> is skipped for projects where <code>dast.enabled: false</code>.</li>
+    <li><strong>Stage 13</strong> only runs when <code>DEPLOY_HIGHER_ENV=true</code> is selected at build time.</li>
+  </ul>
+</div>
+
+<!-- ── CONFIG REFERENCE ── -->
+<div class="section">
+  <h2><span class="num">9</span> config.yaml — full field reference</h2>
+  <p>The project <code>config.yaml</code> must have only a <code>projects:</code> top-level key. Values in brackets show the library default.</p>
+
+  <pre><code><span class="yaml-key">projects</span>:
+
+  <span class="yaml-key">&lt;project-name&gt;</span>:                    <span class="yaml-cm"># key must match projectNames in Jenkinsfile</span>
+
+    <span class="yaml-key">appId</span>:        <span class="str">""</span>                   <span class="yaml-cm"># HCL AppScan application ID (UUID) — REQUIRED</span>
+    <span class="yaml-key">buildTool</span>:    <span class="yaml-val">gradle</span>               <span class="yaml-cm"># gradle | maven | flutter  [default: gradle]</span>
+    <span class="yaml-key">deployTarget</span>: <span class="yaml-val">vm</span>                   <span class="yaml-cm"># vm | openshift            [default: vm]</span>
+    <span class="yaml-key">sourceDir</span>:    <span class="str">"."</span>                  <span class="yaml-cm"># source root for IRX generation [default: .]</span>
+
+    <span class="yaml-key">asoc</span>:                              <span class="yaml-cm"># ASoC credentials — ALL REQUIRED</span>
+      <span class="yaml-key">keyId</span>:     <span class="str">""</span>
+      <span class="yaml-key">keySecret</span>: <span class="str">""</span>
+
+    <span class="yaml-key">influx</span>:                            <span class="yaml-cm"># InfluxDB DORA metrics (optional)</span>
+      <span class="yaml-key">enabled</span>:       <span class="yaml-val">false</span>
+      <span class="yaml-key">project</span>:       <span class="str">""</span>              <span class="yaml-cm"># measurement tag</span>
+      <span class="yaml-key">env</span>:           <span class="str">"dev"</span>           <span class="yaml-cm"># measurement tag</span>
+      <span class="yaml-key">url</span>:           <span class="str">""</span>              <span class="yaml-cm"># InfluxDB v2 write endpoint</span>
+      <span class="yaml-key">token</span>:         <span class="str">""</span>              <span class="yaml-cm"># InfluxDB auth token</span>
+      <span class="yaml-key">credentialsId</span>: <span class="str">""</span>              <span class="yaml-cm"># alternatively: Jenkins credential ID for token</span>
+
+    <span class="yaml-key">coverage</span>:
+      <span class="yaml-key">minLine</span>:    <span class="num-c">60</span>                   <span class="yaml-cm"># project minimum; below the library 60% the release is blocked</span>
+      <span class="yaml-key">reportPath</span>: <span class="str">""</span>                   <span class="yaml-cm"># custom JaCoCo XML path (auto-detected if empty)</span>
+
+    <span class="yaml-key">tools</span>:
+      <span class="yaml-key">sonar</span>:
+        <span class="yaml-key">projectName</span>: <span class="str">""</span>
+        <span class="yaml-key">projectKey</span>:  <span class="str">""</span>
+        <span class="yaml-key">serverUrl</span>:   <span class="str">"https://tools.bbh.com/sonar"</span>
+        <span class="yaml-key">badgeToken</span>:  <span class="str">""</span>              <span class="yaml-cm"># for SonarQube badges in pipeline report</span>
+      <span class="yaml-key">nexusIq</span>:
+        <span class="yaml-key">application</span>:        <span class="str">""</span>       <span class="yaml-cm"># application public ID in Nexus IQ</span>
+        <span class="yaml-key">serverUrl</span>:          <span class="str">"https://tools.bbh.com/IQ"</span>
+        <span class="yaml-key">credentialsId</span>:      <span class="str">"nexusiqP"</span>
+        <span class="yaml-key">scanPatterns</span>:       []       <span class="yaml-cm"># Ant patterns e.g. ["**/build/libs/*.jar"]</span>
+        <span class="yaml-key">stage</span>:              <span class="str">"build"</span>
+        <span class="yaml-key">failOnNetworkError</span>: <span class="yaml-val">false</span>
+
+    <span class="yaml-key">dast</span>:
+      <span class="yaml-key">enabled</span>:    <span class="yaml-val">false</span>              <span class="yaml-cm"># set true to enable DAST</span>
+      <span class="yaml-key">targetUrl</span>:  <span class="str">""</span>                 <span class="yaml-cm"># URL to scan — required when enabled: true</span>
+      <span class="yaml-key">presenceId</span>: <span class="str">""</span>                 <span class="yaml-cm"># AppScan Presence ID for internal networks</span>
+
+    <span class="yaml-key">scm</span>:
+      <span class="yaml-key">bitbucket</span>:                        <span class="yaml-cm"># required to raise GoldenFix pull requests</span>
+        <span class="yaml-key">url</span>:           <span class="str">""</span>              <span class="yaml-cm"># repository link, e.g. https://host/projects/KEY/repos/slug</span>
+        <span class="yaml-key">credentialsId</span>: <span class="str">""</span>              <span class="yaml-cm"># Username with password / HTTP access token</span>
+        <span class="yaml-key">authType</span>:      <span class="yaml-val">basic</span>           <span class="yaml-cm"># basic | bearer</span>
+        <span class="yaml-key">targetBranch</span>:  <span class="str">""</span>              <span class="yaml-cm"># default: branch that triggered the build</span>
+        <span class="yaml-key">reviewers</span>:     []
+
+    <span class="yaml-key">goldenFix</span>:
+      <span class="yaml-key">enabled</span>:                <span class="yaml-val">true</span>    <span class="yaml-cm"># PR GoldenFix-YYYYMMDDHHMM on Nexus IQ policy violation</span>
+      <span class="yaml-key">onlyDirectDependencies</span>: <span class="yaml-val">true</span>
+      <span class="yaml-key">minThreatLevel</span>:         <span class="num-c">2</span>       <span class="yaml-cm"># 2+ medium, 4+ high, 8+ critical</span>
+
+    <span class="yaml-key">tests</span>:
+      <span class="yaml-key">maxParallel</span>: <span class="num-c">20</span>                  <span class="yaml-cm"># library default, max jobs running at once</span>
+      <span class="yaml-key">smoke</span>:
+        <span class="yaml-key">maxParallel</span>: <span class="num-c">20</span>                <span class="yaml-cm"># optional per-stage override</span>
+        <span class="yaml-key">defaults</span>: {}                   <span class="yaml-cm"># merged into every job entry</span>
+        <span class="yaml-key">urls</span>: []                       <span class="yaml-cm"># shorthand list of remote job URLs</span>
+        <span class="yaml-key">jobs</span>:
+          - <span class="yaml-key">name</span>:          <span class="str">""</span>         <span class="yaml-cm"># display name (derived from URL when empty)</span>
+            <span class="yaml-key">type</span>:          <span class="yaml-val">local</span>     <span class="yaml-cm"># local | remote (remote when job is a full URL)</span>
+            <span class="yaml-key">job</span>:           <span class="str">""</span>         <span class="yaml-cm"># job path "folder/job-name" or full job URL</span>
+            <span class="yaml-key">url</span>:           <span class="str">""</span>         <span class="yaml-cm"># alias of job for full URLs</span>
+            <span class="yaml-key">timeoutMin</span>:    <span class="num-c">15</span>
+            <span class="yaml-key">parameters</span>:    <span class="str">""</span>         <span class="yaml-cm"># key=value lines (optional)</span>
+            <span class="yaml-key">remoteJenkins</span>: <span class="str">""</span>         <span class="yaml-cm"># Remote Jenkins name (not needed with a full URL)</span>
+            <span class="yaml-key">credentialsId</span>: <span class="str">""</span>         <span class="yaml-cm"># user + API token for the remote Jenkins (optional)</span>
+      <span class="yaml-key">regression</span>:
+        <span class="yaml-key">jobs</span>:
+          - <span class="yaml-key">name</span>: <span class="str">""</span>  <span class="yaml-key">type</span>: <span class="yaml-val">local</span>  <span class="yaml-key">job</span>: <span class="str">""</span>  <span class="yaml-key">timeoutMin</span>: <span class="num-c">60</span>
+      <span class="yaml-key">performance</span>:
+        <span class="yaml-key">jobs</span>:
+          - <span class="yaml-key">name</span>: <span class="str">""</span>  <span class="yaml-key">type</span>: <span class="yaml-val">local</span>  <span class="yaml-key">job</span>: <span class="str">""</span>  <span class="yaml-key">timeoutMin</span>: <span class="num-c">120</span>
+
+    <span class="yaml-key">deploy</span>:
+      <span class="yaml-key">vm</span>:                              <span class="yaml-cm"># used when deployTarget: vm</span>
+        <span class="yaml-key">rd</span>:                            <span class="yaml-cm"># lower test environment</span>
+          <span class="yaml-key">host</span>:         <span class="str">""</span>
+          <span class="yaml-key">user</span>:         <span class="str">"taadmin"</span>
+          <span class="yaml-key">deployDir</span>:    <span class="str">""</span>
+          <span class="yaml-key">deployScript</span>: <span class="str">"scripts/deployment/zero-downtime-deployment.sh"</span>
+          <span class="yaml-key">versionFile</span>:  <span class="str">"scripts/deployment/version.properties"</span>
+        <span class="yaml-key">qc</span>:                            <span class="yaml-cm"># higher test environment</span>
+          <span class="yaml-key">host</span>:         <span class="str">""</span>
+          <span class="yaml-key">user</span>:         <span class="str">"taadmin"</span>
+          <span class="yaml-key">deployDir</span>:    <span class="str">""</span>
+          <span class="yaml-key">deployScript</span>: <span class="str">"scripts/deployment/zero-downtime-deployment.sh"</span>
+          <span class="yaml-key">versionFile</span>:  <span class="str">"scripts/deployment/version.properties"</span>
+      <span class="yaml-key">openshift</span>:                       <span class="yaml-cm"># used when deployTarget: openshift</span>
+        <span class="yaml-key">rd</span>:
+          <span class="yaml-key">appName</span>:           <span class="str">""</span>
+          <span class="yaml-key">projectDeployment</span>: <span class="str">""</span>        <span class="yaml-cm"># OpenShift project/namespace</span>
+          <span class="yaml-key">cluster</span>:           <span class="str">""</span>        <span class="yaml-cm"># API URL e.g. https://api.ocp-rd.example.com:6443</span>
+          <span class="yaml-key">credentialsId</span>:     <span class="str">"openshift-rd-token"</span>
+          <span class="yaml-key">imageRegistry</span>:     <span class="str">""</span>
+          <span class="yaml-key">imageNamespace</span>:    <span class="str">""</span>
+        <span class="yaml-key">qc</span>:
+          <span class="yaml-key">appName</span>: <span class="str">""</span>  <span class="yaml-key">projectDeployment</span>: <span class="str">""</span>  <span class="yaml-key">cluster</span>: <span class="str">""</span>
+          <span class="yaml-key">credentialsId</span>: <span class="str">"openshift-qc-token"</span>
+          <span class="yaml-key">imageRegistry</span>: <span class="str">""</span>  <span class="yaml-key">imageNamespace</span>: <span class="str">""</span>
+
+    <span class="yaml-key">flutter</span>:                           <span class="yaml-cm"># only when buildTool: flutter</span>
+      <span class="yaml-key">platform</span>: <span class="yaml-val">apk</span>                    <span class="yaml-cm"># apk | appbundle | ios | macos | linux | windows | web</span></code></pre>
+
+  <h3>Required vs optional fields</h3>
+  <table>
+    <tr><th>Field</th><th>Required</th><th>Notes</th></tr>
+    <tr><td><code>asoc.keyId</code></td><td><strong>YES</strong></td><td>Pipeline fails at stage 1</td></tr>
+    <tr><td><code>asoc.keySecret</code></td><td><strong>YES</strong></td><td>Pipeline fails at stage 1</td></tr>
+    <tr><td><code>appId</code></td><td><strong>YES</strong></td><td>Required for SAST and DAST scans</td></tr>
+    <tr><td><code>tools.sonar.projectKey</code></td><td>Recommended</td><td>SonarQube scan skipped silently without it</td></tr>
+    <tr><td><code>tools.nexusIq.application</code></td><td>Recommended</td><td>Nexus IQ scan skipped silently without it</td></tr>
+    <tr><td><code>dast.targetUrl</code></td><td>Only if <code>dast.enabled: true</code></td><td>Pipeline fails at DAST stage</td></tr>
+    <tr><td><code>deploy.vm.*</code></td><td>Only if <code>deployTarget: vm</code></td><td></td></tr>
+    <tr><td><code>deploy.openshift.*</code></td><td>Only if <code>deployTarget: openshift</code></td><td></td></tr>
+  </table>
+</div>
+
+<!-- ── POLICY THRESHOLDS ── -->
+<div class="section">
+  <h2><span class="num">10</span> Policy thresholds — non-overridable defaults</h2>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠</span>
+    <div class="callout-body"><strong>These values are embedded in the library (<code>resources/defaults.yaml</code>) and cannot be changed by projects.</strong> To adjust a threshold, the library must be updated and a new version released.</div>
+  </div>
+
+  <table>
+    <tr><th>Scanner</th><th>Metric</th><th style="text-align:center">Default</th></tr>
+    <tr><td>SAST (HCL AppScan)</td><td>maxCritical</td><td class="thresh-val">10</td></tr>
+    <tr><td>SAST (HCL AppScan)</td><td>maxHigh</td><td class="thresh-val">10</td></tr>
+    <tr><td>SAST (HCL AppScan)</td><td>maxMedium</td><td class="thresh-val">10</td></tr>
+    <tr><td>SCA / Dependencies (Nexus IQ)</td><td>maxCritical</td><td class="thresh-val">10</td></tr>
+    <tr><td>SCA / Dependencies (Nexus IQ)</td><td>maxHigh</td><td class="thresh-val">10</td></tr>
+    <tr><td>SCA / Dependencies (Nexus IQ)</td><td>maxMedium</td><td class="thresh-val">10</td></tr>
+    <tr><td>DAST (HCL AppScan)</td><td>maxCritical</td><td class="thresh-val">10</td></tr>
+    <tr><td>DAST (HCL AppScan)</td><td>maxHigh</td><td class="thresh-val">10</td></tr>
+    <tr><td>DAST (HCL AppScan)</td><td>maxMedium</td><td class="thresh-val">10</td></tr>
+    <tr><td>Code coverage</td><td>minLine</td><td class="thresh-val">60 %</td></tr>
+    <tr><td>SAST IRX generation</td><td>prepareTimeoutMin</td><td class="thresh-val">20 min</td></tr>
+    <tr><td>SAST result polling</td><td>pollTimeoutMin</td><td class="thresh-val">50 min</td></tr>
+    <tr><td>SAST result polling</td><td>pollIntervalSec</td><td class="thresh-val">30 s</td></tr>
+    <tr><td>DAST result polling</td><td>pollTimeoutMin</td><td class="thresh-val">60 min</td></tr>
+    <tr><td>DAST result polling</td><td>pollIntervalSec</td><td class="thresh-val">60 s</td></tr>
+  </table>
+</div>
+
+<!-- ── BUILD TOOLS ── -->
+<div class="section">
+  <h2><span class="num">11</span> Supported build tools</h2>
+
+  <table>
+    <tr><th>Tool</th><th>Build command</th><th>Tests + coverage</th><th>Publish</th></tr>
+    <tr><td><strong>Gradle</strong></td><td><code>./gradlew clean build -x test</code></td><td><code>./gradlew clean test jacocoTestReport jacocoTestCoverageVerification</code></td><td><code>./gradlew publish</code></td></tr>
+    <tr><td><strong>Maven</strong></td><td><code>mvn clean package -DskipTests</code></td><td><code>mvn test jacoco:report</code></td><td><code>mvn deploy</code></td></tr>
+    <tr><td><strong>Flutter</strong></td><td><code>flutter build &lt;platform&gt;</code></td><td><code>flutter test --coverage --machine</code></td><td>N/A</td></tr>
+  </table>
+
+  <p>The build tool is auto-detected from <code>buildTool</code> in config. If not specified, the library checks for <code>pubspec.yaml</code> (Flutter), <code>pom.xml</code> (Maven), or <code>build.gradle</code> (Gradle) and defaults to Gradle. Wrapper scripts (<code>gradlew</code>, <code>mvnw</code>) are used when present.</p>
+
+  <h3>JaCoCo report auto-detection</h3>
+  <p><strong>Gradle</strong> (searched in order): <code>build/jacoco/jacoco.xml</code> → <code>build/reports/jacoco/test/jacocoTestReport.xml</code> → <code>build/reports/jacoco/jacocoTestReport.xml</code></p>
+  <p><strong>Maven</strong> (searched in order): <code>target/site/jacoco/jacoco.xml</code> → <code>target/jacoco/jacoco.xml</code></p>
+  <p>Use <code>coverage.reportPath</code> in <code>config.yaml</code> for a custom path.</p>
+</div>
+
+<!-- ── DEPLOY ── -->
+<div class="section">
+  <h2><span class="num">12</span> Supported deployment targets</h2>
+
+  <h3>VM deployment via SSH (<code>deployTarget: vm</code>)</h3>
+  <p>Default target. The library:</p>
+  <ol>
+    <li>Verifies SSH connectivity (<code>ssh ... uptime</code>)</li>
+    <li>Creates the deploy directory on the remote host</li>
+    <li>Copies <code>deployScript</code> and <code>versionFile</code> via SCP</li>
+    <li>Executes <code>deployScript</code> on the remote host</li>
+    <li>Verifies the deployed version by reading <code>APP_VERSION</code> from <code>versionFile</code></li>
+  </ol>
+  <p><strong>Requirements:</strong> Jenkins agent must have SSH key-based access to the deployment host. <code>deployScript</code> must exist in your project. <code>versionFile</code> must contain <code>APP_VERSION=&lt;version&gt;</code>.</p>
+
+  <h3>OpenShift deployment (<code>deployTarget: openshift</code>)</h3>
+  <p>Uses the OpenShift Jenkins Plugin. The library:</p>
+  <ol>
+    <li>Reads cluster URL and credentials from <code>deploy.openshift.&lt;env&gt;</code></li>
+    <li>Applies <code>deployConfig.yml</code> from your repository root via <code>openshift.process()</code></li>
+    <li>Restarts the deployment rollout</li>
+    <li>Waits for rollout to complete</li>
+  </ol>
+  <p><strong>Requirements:</strong> OpenShift Client Plugin installed. Cluster credentials in Jenkins with the configured <code>credentialsId</code>. <code>deployConfig.yml</code> in your repository root.</p>
+</div>
+
+<!-- ── ADVANCED ── -->
+<div class="section">
+  <h2><span class="num">13</span> Advanced — using library methods directly</h2>
+
+  <p>For projects with custom pipeline requirements you can call individual library methods from a hand-crafted Jenkinsfile. After loading the library, use <code>devSecOpsPipeline</code> as a method object:</p>
+
+  <pre><code><span class="at">@Library</span>(<span class="str">'DevSecOpsJenkinsLibrary'</span>) _
+
+<span class="fn">pipeline</span> {
+    <span class="kw">agent</span> <span class="kw">any</span>
+
+    <span class="kw">environment</span> {
+        SA_LINUX_URL       = <span class="str">'https://tools.bbh.com/nexus/repository/releases/...'</span>
+        PROXY_HOST         = <span class="str">'tstproxy.bbh.com'</span>
+        PROXY_PORT         = <span class="str">'9090'</span>
+        PROXY_USER         = <span class="str">'PROXY_ASOCJenk'</span>
+        APPSCAN_HOST       = <span class="str">'bbh.cloud.appscan.com'</span>
+        APPSCAN_SERVER_URL = <span class="str">'https://bbh.cloud.appscan.com'</span>
+        APPSCAN_TOOLS_DIR  = <span class="str">"${WORKSPACE}/.appscan-tools"</span>
+        APPSCAN_LOG_DIR    = <span class="str">"${WORKSPACE}/.appscan-logs"</span>
+        APPSCAN_HOME_DIR   = <span class="str">"${WORKSPACE}/.appscan-home"</span>
+        APPSCAN_BIN_DIR    = <span class="str">"${WORKSPACE}/.appscan-bin"</span>
+    }
+
+    <span class="kw">stages</span> {
+        <span class="fn">stage</span>(<span class="str">'Init'</span>) {
+            <span class="kw">steps</span> { <span class="kw">script</span> {
+                checkout scm
+                devSecOpsPipeline.<span class="fn">initialize</span>()
+                devSecOpsPipeline.<span class="fn">appscanSetup</span>()
+                <span class="kw">def</span> projects = devSecOpsPipeline.<span class="fn">getProjects</span>()
+                <span class="kw">for</span> (p <span class="kw">in</span> projects) {
+                    devSecOpsPipeline.<span class="fn">switchProject</span>(p)
+                    devSecOpsPipeline.<span class="fn">appscanResolveSourceDir</span>()
+                    devSecOpsPipeline.<span class="fn">appscanGenerateIRX</span>()
+                }
+                devSecOpsPipeline.<span class="fn">appscanLogin</span>()
+            }}
+        }
+        <span class="fn">stage</span>(<span class="str">'Build &amp; Scan'</span>) {
+            <span class="kw">steps</span> { <span class="kw">script</span> {
+                devSecOpsPipeline.<span class="fn">buildArtifact</span>()
+                devSecOpsPipeline.<span class="fn">unitTests</span>()
+                devSecOpsPipeline.<span class="fn">checkCoverage</span>(<span class="num-c">60</span>)
+                devSecOpsPipeline.<span class="fn">depVulnScan</span>()
+                devSecOpsPipeline.<span class="fn">codeQualityScan</span>()
+                devSecOpsPipeline.<span class="fn">appscanQueue</span>()
+                devSecOpsPipeline.<span class="fn">appscanWait</span>()
+                devSecOpsPipeline.<span class="fn">appscanDownloadReports</span>()
+                devSecOpsPipeline.<span class="fn">appscanEnforcePolicy</span>()
+            }}
+        }
+    }
+    <span class="kw">post</span> { <span class="kw">always</span> { <span class="kw">script</span> {
+        devSecOpsPipeline.<span class="fn">generateHtmlReport</span>()
+        devSecOpsPipeline.<span class="fn">feedInfluxDB</span>()
+    }}}
+}</code></pre>
+
+  <h3>Complete method reference</h3>
+  <table class="method-table">
+    <tr><th>Method</th><th>Description</th></tr>
+    <tr><td><code>initialize()</code></td><td>Load config, set env vars, detect OS</td></tr>
+    <tr><td><code>appscanSetup()</code></td><td>Download and extract SAClientUtil (HCL AppScan CLI)</td></tr>
+    <tr><td><code>appscanLogin()</code></td><td>Authenticate with ASoC using keyId/keySecret from config</td></tr>
+    <tr><td><code>appscanResolveSourceDir(String path = null)</code></td><td>Set IRX source directory (defaults to <code>sourceDir</code> from config)</td></tr>
+    <tr><td><code>appscanGenerateIRX(int timeoutMin = 20)</code></td><td>Compile project and generate IRX archive for SAST</td></tr>
+    <tr><td><code>appscanQueue()</code></td><td>Queue SAST scan for current project in ASoC</td></tr>
+    <tr><td><code>appscanWait()</code></td><td>Poll ASoC until SAST scan completes</td></tr>
+    <tr><td><code>appscanDownloadReports()</code></td><td>Download SAST HTML report and parse vulnerability counts</td></tr>
+    <tr><td><code>appscanRenameSastReport()</code></td><td>Rename SAST report file with project scan name</td></tr>
+    <tr><td><code>appscanRenameDastReport()</code></td><td>Rename DAST report file with project scan name</td></tr>
+    <tr><td><code>appscanEnforcePolicy()</code></td><td>Enforce SAST policy thresholds. Returns critical+high+medium count.</td></tr>
+    <tr><td><code>dastScan()</code></td><td>Run full DAST scan (queue → poll → download → enforce). Returns count.</td></tr>
+    <tr><td><code>buildArtifact()</code></td><td>Build project with Gradle/Maven/Flutter</td></tr>
+    <tr><td><code>unitTests()</code></td><td>Run unit tests with coverage collection</td></tr>
+    <tr><td><code>checkCoverage(int min = 60)</code></td><td>Parse coverage report and enforce minimum threshold</td></tr>
+    <tr><td><code>depVulnScan()</code></td><td>Run Nexus IQ dependency vulnerability scan</td></tr>
+    <tr><td><code>codeQualityScan()</code></td><td>Run SonarQube analysis and fetch issue counts</td></tr>
+    <tr><td><code>reportArtifactBuild()</code></td><td>Report artifact metadata to BBH build reporting</td></tr>
+    <tr><td><code>reportUnitTests()</code></td><td>Publish test results to BBH build reporting</td></tr>
+    <tr><td><code>smokeTests()</code></td><td>Trigger smoke test jobs (parallel, configured in config.yaml)</td></tr>
+    <tr><td><code>regressionTests()</code></td><td>Trigger regression test jobs (parallel)</td></tr>
+    <tr><td><code>performanceTests()</code></td><td>Trigger performance test jobs (parallel)</td></tr>
+    <tr><td><code>deployRD()</code></td><td>Deploy to RD environment via SSH/SCP</td></tr>
+    <tr><td><code>deployQC()</code></td><td>Deploy to QC environment via SSH/SCP</td></tr>
+    <tr><td><code>deployOpenshift(String env)</code></td><td>Deploy to OpenShift — env: <code>rd</code> or <code>qc</code></td></tr>
+    <tr><td><code>publishArtifactQC()</code></td><td>Publish artifact to Nexus release repository</td></tr>
+    <tr><td><code>nexusDelivery(String env)</code></td><td>Tag image in OpenShift image registry</td></tr>
+    <tr><td><code>buildDockerImage()</code></td><td>Build Docker image via OpenShift BuildConfig</td></tr>
+    <tr><td><code>bumpVersion(String file, String version)</code></td><td>Update <code>APP_VERSION</code> in version.properties</td></tr>
+    <tr><td><code>checkoutDeploymentRepo(Map cfg)</code></td><td>Checkout deployment repository to <code>deployment/</code> subdirectory</td></tr>
+    <tr><td><code>generateHtmlReport()</code></td><td>Generate HTML pipeline security report</td></tr>
+    <tr><td><code>feedInfluxDB()</code></td><td>Send DORA metrics to InfluxDB</td></tr>
+    <tr><td><code>getProjects()</code></td><td>Returns list of project names</td></tr>
+    <tr><td><code>getCFG()</code></td><td>Returns current project config map</td></tr>
+    <tr><td><code>switchProject(String name)</code></td><td>Switch active project context (config + scan name)</td></tr>
+    <tr><td><code>stageStart(String name)</code></td><td>Record stage start time</td></tr>
+    <tr><td><code>stageDone(String name)</code></td><td>Record stage end time</td></tr>
+    <tr><td><code>stagePass(String name)</code></td><td>Mark stage as PASS</td></tr>
+    <tr><td><code>stageFail(String name)</code></td><td>Mark stage as FAIL</td></tr>
+    <tr><td><code>stageWarn(String name)</code></td><td>Mark stage as WARN (unstable)</td></tr>
+    <tr><td><code>stageError(String name, String reason)</code></td><td>Record stage error message</td></tr>
+    <tr><td><code>logStageResult(String name, String status)</code></td><td>Print stage result + vulnerability summary to console</td></tr>
+    <tr><td><code>section(String text)</code></td><td>Print section separator to console</td></tr>
+  </table>
+</div>
+
+<!-- ── TROUBLESHOOTING ── -->
+<div class="section">
+  <h2><span class="num">14</span> Troubleshooting</h2>
+
+  <h3>"config.yaml not found in workspace"</h3>
+  <p>Your project repository must have a <code>config.yaml</code> at its root with a <code>projects:</code> section. Make sure it is committed and the branch is correct.</p>
+
+  <h3>"asoc.keyId and asoc.keySecret must be set in config.yaml"</h3>
+  <p>Every project entry must include:</p>
+  <pre><code><span class="yaml-key">asoc</span>:
+  <span class="yaml-key">keyId</span>:     <span class="str">"bbh_..."</span>
+  <span class="yaml-key">keySecret</span>: <span class="str">"..."</span></code></pre>
+  <p>Obtain API credentials from the HCL AppScan on Cloud portal under your organization's API key settings.</p>
+
+  <h3>"IRX not found after prepare"</h3>
+  <ul>
+    <li>The Gradle/Maven compile during IRX generation failed. Check <code>.appscan-logs/prepare.log</code>.</li>
+    <li>Ensure the Gradle wrapper (<code>gradlew</code>) is executable and committed. The library runs <code>chmod +x gradlew</code> automatically on Linux.</li>
+  </ul>
+
+  <h3>SAST stage times out</h3>
+  <p>The default <code>sast.pollTimeoutMin</code> is 50 minutes — a library-level setting only the library team can change. IRX generation can take 10–20 minutes on large projects before polling even starts.</p>
+
+  <h3>"SonarQube server not configured"</h3>
+  <p>Register the SonarQube server in Jenkins under <em>Manage Jenkins → Configure System → SonarQube servers</em> with the name <code>SonarQube</code> (exactly this string).</p>
+
+  <h3>Nexus IQ shows 0 vulnerabilities but build is UNSTABLE</h3>
+  <p>The Jenkins sandbox may have blocked direct access to the scan result object. The library has a fallback that parses the console log. If that also fails, counts remain 0 but the build result set by the Nexus IQ plugin is still respected.</p>
+
+  <h3>HTML report shows "Report could not be generated"</h3>
+  <p>The pipeline failed before <code>initialize()</code> completed. A minimal fallback HTML is always written. Check the console output of stage 1 for the root cause.</p>
+
+  <h3>"No test jobs configured — tests are mandatory"</h3>
+  <p>All three test stages require at least one entry in their <code>jobs:</code> list. Use <code>job: ""</code> with <code>type: local</code> to create a placeholder entry that shows <code>NOT_CONFIGURED</code> without failing. If the <code>jobs:</code> list itself is empty or missing the stage fails.</p>
+
+  <h3>Nexus delivery and QC deployment were skipped</h3>
+  <p>The release gate compares the scan results and the line coverage with the library policy in <code>resources/defaults.yaml</code>. A project may raise its own thresholds for SAST, SCA, Nexus IQ and coverage in <code>config.yaml</code>, which lets the build reach the RD environment, but while the library policy is exceeded the artifact is not published to Nexus and QC is blocked. The build becomes UNSTABLE and the <strong>Release policy</strong> card of the HTML report lists every violation.</p>
+
+  <h3>DAST PDF report is missing in the pipeline report</h3>
+  <p>The DAST stage downloads the report as HTML and as PDF (<code>appscan-dast-report-&lt;scan&gt;.pdf</code>) and archives both. If only the HTML link is shown, check the console for <code>[DAST] PDF report not found</code> — generating the PDF in ASoC may have taken longer than the download window, or the report request returned no id.</p>
+
+  <h3>GoldenFix pull request was not raised</h3>
+  <p>The Nexus IQ GoldenFix card of the HTML report shows the reason. <code>NOT_CONFIGURED</code> — set <code>scm.bitbucket.url</code> and <code>scm.bitbucket.credentialsId</code>. <code>NO_FIXES</code> — Nexus IQ has no remediation version for the violating direct dependencies. <code>NO_MANIFEST_CHANGES</code> — the vulnerable versions are not declared in <code>pom.xml</code>, Gradle, <code>package.json</code> or pip files (e.g. managed by a BOM). <code>ERROR</code> — check the <code>[GOLDENFIX]</code> lines in the console log (Nexus IQ / Bitbucket permissions, push rights to the repository).</p>
+
+  <h3>Many smoke tests (hundreds of jobs)</h3>
+  <p>All jobs are executed even when some fail; at most <code>tests.maxParallel</code> (default 20) run at the same time. Remote jobs can be listed by full URL (<code>url:</code> or <code>tests.smoke.urls</code>) and share settings through <code>tests.smoke.defaults</code>. Increase <code>maxParallel</code> only if the remote Jenkins instances have enough executors.</p>
+
+  <h3>Deploy stage fails with SSH permission denied</h3>
+  <p>The Jenkins agent needs key-based SSH access to the deployment host. Add the agent's public key to <code>~/.ssh/authorized_keys</code> on the target server and ensure <code>StrictHostKeyChecking</code> is not blocking the connection (the library passes <code>-o StrictHostKeyChecking=no</code>).</p>
+</div>
+
+<div class="footer">DevSecOpsJenkinsLibrary — BBH ITSS DevSecOps Team</div>
+
+</div>
+</body>
+</html>

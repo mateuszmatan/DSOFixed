@@ -1,0 +1,66 @@
+defaults:
+  buildTool:    gradle
+  deployTarget: vm
+  sourceDir:    "."
+  coverage:
+    minLine: 60
+
+  tools:
+    sonar:
+      qualityGate:
+        waitForQualityGate: true
+        timeoutMinutes:     5
+    nexusIq:
+      maxCritical: 0
+      maxHigh:     0
+      maxMedium:   0
+
+  sast:
+    maxCritical:       0
+    maxHigh:           0
+    maxMedium:         0
+    warnOnly:          false
+    prepareTimeoutMin: 120
+    pollTimeoutMin:    50
+    pollIntervalSec:   30
+
+  sca:
+    enabled:         true
+    maxCritical:     0
+    maxHigh:         0
+    maxMedium:       0
+    warnOnly:        false
+    pollTimeoutMin:  40
+    pollIntervalSec: 30
+
+  dast:
+    maxCritical:     0
+    maxHigh:         0
+    maxMedium:       0
+    warnOnly:        false
+    pollTimeoutMin:  60
+    pollIntervalSec: 60
+
+  tests:
+    maxParallel: 20                # max test jobs (smoke/regression/performance) running at the same time
+
+  releaseGate:                     # blocks the Nexus release and the QC deployment when these limits are exceeded
+    scanners:        [sast, sca, niq, dast]
+    requireCoverage: true          # line coverage must reach coverage.minLine of this file
+    stateFile:       release-gate.json
+
+  goldenFix:
+    enabled:                true
+    onlyDirectDependencies: true   # only libraries declared directly by the application
+    minThreatLevel:         2      # Nexus IQ threat level: 2+ medium (moderate), 4+ high (severe), 8+ critical
+    ecosystems:             [maven, npm, pypi]
+    remediationPreference:         # first matching Nexus IQ remediation type wins
+      - recommended-non-breaking-with-dependencies   # Golden Version (Maven)
+      - next-no-violations-with-dependencies
+      - next-no-violations
+      - recommended-non-breaking
+      - next-non-failing-with-dependencies
+      - next-non-failing
+    commitAuthorName:  "DevSecOps GoldenFix"
+    commitAuthorEmail: "devsecops-goldenfix@noreply.local"
+    timeZone:          ""          # time zone of the GoldenFix-YYYYMMDDHHMM name, empty = agent default
