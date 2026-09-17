@@ -213,24 +213,6 @@ def call(Map config = [:]) {
                 }
             }
 
-            stage('Smoke tests') {
-                steps {
-                    script {
-                        dsl.stageStart('Smoke tests')
-                        def projects = dsl.getProjects()
-                        for (pName in projects) {
-                            dsl.switchProject(pName)
-                            dsl.smokeTests()
-                        }
-                    }
-                }
-                post {
-                    always  { script { dsl.stageDone('Smoke tests') } }
-                    success { script { dsl.stagePass('Smoke tests'); dsl.logStageResult('Smoke tests', 'PASS') } }
-                    failure { script { dsl.stageFail('Smoke tests'); dsl.logStageResult('Smoke tests', 'FAIL') } }
-                }
-            }
-
             stage('Regression tests (>60% user stories coverage)') {
                 steps {
                     script {
@@ -246,6 +228,24 @@ def call(Map config = [:]) {
                     always  { script { dsl.stageDone('Regression tests (>60% user stories coverage)') } }
                     success { script { dsl.stagePass('Regression tests (>60% user stories coverage)'); dsl.logStageResult('Regression tests (>60% user stories coverage)', 'PASS') } }
                     failure { script { dsl.stageFail('Regression tests (>60% user stories coverage)'); dsl.logStageResult('Regression tests (>60% user stories coverage)', 'FAIL') } }
+                }
+            }
+
+            stage('Smoke tests') {
+                steps {
+                    script {
+                        dsl.stageStart('Smoke tests')
+                        def projects = dsl.getProjects()
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.smokeTests()
+                        }
+                    }
+                }
+                post {
+                    always  { script { dsl.stageDone('Smoke tests') } }
+                    success { script { dsl.stagePass('Smoke tests'); dsl.logStageResult('Smoke tests', 'PASS') } }
+                    failure { script { dsl.stageFail('Smoke tests'); dsl.logStageResult('Smoke tests', 'FAIL') } }
                 }
             }
 

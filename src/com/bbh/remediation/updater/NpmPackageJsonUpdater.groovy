@@ -5,12 +5,9 @@ import com.bbh.remediation.port.ManifestUpdater
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-
 class NpmPackageJsonUpdater implements ManifestUpdater {
 
-    private static final Pattern SECTION = Pattern.compile('(?s)("(?:dependencies|devDependencies|peerDependencies|optionalDependencies)"\\s*:\\s*\\{)([^{}]*)(\\})')
+    private static final String SECTION_RE = '(?s)("(?:dependencies|devDependencies|peerDependencies|optionalDependencies)"\\s*:\\s*\\{)([^{}]*)(\\})'
 
     String ecosystem() { return GoldenFix.NPM }
 
@@ -27,25 +24,22 @@ class NpmPackageJsonUpdater implements ManifestUpdater {
         List changes = []
         List notes = []
 
-        String updated = UpdaterSupport.replaceGroup(content, SECTION, 2) { Matcher m ->
-            String section = m.group(2)
+        String updated = UpdaterSupport.replaceValue(content, SECTION_RE) { String section ->
             String newSection = section
-            for (Map fix : fixes) {
-                String q = Pattern.quote(fix.name as String)
+            fixes.each { fix ->
+                String name = UpdaterSupport.quote(fix.name as String)
                 String target = fix.targetVersion as String
                 boolean handled = false
-                Pattern simple = Pattern.compile('"' + q + '"\\s*:\\s*"(\\^|~|>=|=)?\\s*v?(\\d[\\w.\\-+]*)"')
-                newSection = UpdaterSupport.replaceGroup(newSection, simple, 2) { Matcher x ->
+                newSection = UpdaterSupport.replaceValue(newSection, '("' + name + '"\\s*:\\s*"(?:\\^|~|>=|=)?\\s*v?)(\\d[\\w.\\-+]*)(")') { String declared ->
                     handled = true
-                    String declared = x.group(2)
                     if (!VersionUtils.isConcreteVersion(declared) || !VersionUtils.isUpgrade(declared, target)) return null
                     changes << UpdaterSupport.change(relativePath, fix, declared, target)
                     return target
                 }
                 if (!handled) {
-                    Matcher any = Pattern.compile('"' + q + '"\\s*:\\s*"([^"]*)"').matcher(newSection)
-                    if (any.find()) {
-                        notes << UpdaterSupport.note(relativePath, fix, "version spec '${any.group(1)}' is not a simple version".toString())
+                    List declared = UpdaterSupport.findAll(newSection, '"' + name + '"\\s*:\\s*"([^"]*)"', 1)
+                    if (declared) {
+                        notes << UpdaterSupport.note(relativePath, fix, "version spec '${declared[0]}' is not a simple version".toString())
                     }
                 }
             }

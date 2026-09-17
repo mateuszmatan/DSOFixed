@@ -15,6 +15,19 @@ projects:
       url:     "http://qcwsecopsmon1.testbbh.com:8086/api/v2/write?org=DevSecOps&bucket=DORA-metrics&precision=s"
       token:   "3m5H2lOEyUiUQLrDi1DT2Ws2GatOW9lhVPez9kbWqDoWJP8o07meyl3XXbeI-GWZayZrw93h_DPfjNu_CrLBiQ=="
 
+    coverage:
+      minLine: 60
+
+    sast:
+      maxCritical: 0
+      maxHigh:     0
+      maxMedium:   0
+
+    sca:
+      maxCritical: 0
+      maxHigh:     0
+      maxMedium:   0
+
     tools:
       sonar:
         projectName: "CertScanner-GUI"
@@ -28,30 +41,55 @@ projects:
         scanPatterns:       ["**/gui/build/libs/*.jar"]
         stage:              "build"
         failOnNetworkError: false
+        maxCritical:        0
+        maxHigh:            0
+        maxMedium:          0
 
     dast:
       enabled:    true
       targetUrl:  "http://rdltaapps1.testbbh.com"
       presenceId: ""
 
+    scm:
+      bitbucket:
+        url:           "https://bitbucket.bbh.com/projects/TA/repos/cert-scanner"
+        credentialsId: "bitbucket-http-credentials"
+        authType:      basic
+        targetBranch:  ""
+        reviewers:     []
+
+    goldenFix:
+      enabled: true
+
     tests:
-      smoke:
-        jobs:
-          - name:       "CertScanner-GUI - smoke"
-            type:       local
-            job:        ""
-            timeoutMin: 15
       regression:
         jobs:
           - name:       "CertScanner-GUI - regression"
             type:       local
-            job:        ""
+            job:        "cert-scanner/regression-tests"
             timeoutMin: 60
+      smoke:
+        maxParallel: 20
+        defaults:
+          type:          remote
+          timeoutMin:    15
+          credentialsId: "remote-jenkins-api-token"
+        jobs:
+          - name: "CertScanner-GUI - login smoke"
+            url:  "https://jenkins-a.bbh.com/job/smoke/job/cert-scanner-login"
+          - name: "CertScanner-GUI - certificate list smoke"
+            url:  "https://jenkins-a.bbh.com/job/smoke/job/cert-scanner-list"
+          - name:       "CertScanner-GUI - local smoke"
+            type:       local
+            job:        "cert-scanner/smoke-tests"
+            timeoutMin: 15
+        urls:
+          - "https://jenkins-b.bbh.com/job/smoke/job/cert-scanner-expiry"
       performance:
         jobs:
           - name:       "CertScanner-GUI - performance"
             type:       local
-            job:        ""
+            job:        "cert-scanner/performance-tests"
             timeoutMin: 120
 
     deploy:
@@ -100,6 +138,14 @@ projects:
       url:     "http://qcwsecopsmon1.testbbh.com:8086/api/v2/write?org=DevSecOps&bucket=DORA-metrics&precision=s"
       token:   "3m5H2lOEyUiUQLrDi1DT2Ws2GatOW9lhVPez9kbWqDoWJP8o07meyl3XXbeI-GWZayZrw93h_DPfjNu_CrLBiQ=="
 
+    coverage:
+      minLine: 45
+
+    sast:
+      maxCritical: 0
+      maxHigh:     2
+      maxMedium:   5
+
     tools:
       sonar:
         projectName: "CertScanner-Backend"
@@ -117,24 +163,29 @@ projects:
     dast:
       enabled: false
 
+    scm:
+      bitbucket:
+        url:           "https://bitbucket.bbh.com/projects/TA/repos/cert-scanner"
+        credentialsId: "bitbucket-http-credentials"
+
     tests:
-      smoke:
-        jobs:
-          - name:       "CertScanner-Backend - smoke"
-            type:       local
-            job:        ""
-            timeoutMin: 15
       regression:
         jobs:
           - name:       "CertScanner-Backend - regression"
             type:       local
-            job:        ""
+            job:        "cert-scanner/api-regression-tests"
             timeoutMin: 60
+      smoke:
+        jobs:
+          - name:       "CertScanner-Backend - smoke"
+            type:       local
+            job:        "cert-scanner/api-smoke-tests"
+            timeoutMin: 15
       performance:
         jobs:
           - name:       "CertScanner-Backend - performance"
             type:       local
-            job:        ""
+            job:        "cert-scanner/api-performance-tests"
             timeoutMin: 120
 
     deploy:

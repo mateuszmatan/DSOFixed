@@ -5,16 +5,13 @@ import com.bbh.remediation.port.ManifestUpdater
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-
 class MavenPomUpdater implements ManifestUpdater {
 
-    private static final Pattern DEPENDENCY = Pattern.compile('(?s)<dependency\\s*>(.*?)</dependency\\s*>')
-    private static final Pattern VERSION    = Pattern.compile('<version>\\s*([^<]*?)\\s*</version>')
-    private static final Pattern PROPERTIES = Pattern.compile('(?s)<properties\\s*>(.*?)</properties\\s*>')
-    private static final Pattern PROPERTY_REF = Pattern.compile('^\\$\\{([^}]+)\\}$')
-    private static final String  EXCLUSIONS = '(?s)<exclusions\\s*>.*?</exclusions\\s*>'
+    private static final String DEPENDENCY_RE = '(?s)(<dependency\\s*>)(.*?)(</dependency\\s*>)'
+    private static final String VERSION_RE    = '(<version>\\s*)([^<]*?)(\\s*</version>)'
+    private static final String PROPERTIES_RE = '(?s)(<properties\\s*>)(.*?)(</properties\\s*>)'
+    private static final String EXCLUSIONS_RE = '(?s)<exclusions\\s*>.*?</exclusions\\s*>'
+    private static final String PROPERTY_REF_RE = '^\\$\\{([^}]+)\\}$'
 
     String ecosystem() { return GoldenFix.MAVEN }
 
@@ -32,23 +29,21 @@ class MavenPomUpdater implements ManifestUpdater {
         List properties = []
         List notes = []
 
-        String updated = UpdaterSupport.replaceGroup(content, DEPENDENCY, 1) { Matcher m ->
-            String block  = m.group(1)
-            String header = block.replaceAll(EXCLUSIONS, '')
-            String groupId    = tag(header, 'groupId')
+        String updated = UpdaterSupport.replaceValue(content, DEPENDENCY_RE) { String block ->
+            String header = block.replaceAll(EXCLUSIONS_RE, '')
+            String groupId = tag(header, 'groupId')
             String artifactId = tag(header, 'artifactId')
             Map fix = (groupId && artifactId) ? byKey[GoldenFix.key(GoldenFix.MAVEN, groupId, artifactId)] as Map : null
             if (!fix) return null
 
-            Matcher vm = VERSION.matcher(header)
-            if (!vm.find()) {
+            String declared = tag(header, 'version')
+            if (declared == null) {
                 notes << UpdaterSupport.note(relativePath, fix, 'version is not declared here (managed by a parent POM or BOM)')
                 return null
             }
-            String declared = vm.group(1)
-            Matcher pm = PROPERTY_REF.matcher(declared)
-            if (pm.matches()) {
-                properties << UpdaterSupport.propertyRequest(pm.group(1), fix, relativePath)
+            String property = propertyName(declared)
+            if (property) {
+                properties << UpdaterSupport.propertyRequest(property, fix, relativePath)
                 return null
             }
             if (!VersionUtils.isConcreteVersion(declared)) {
@@ -59,7 +54,7 @@ class MavenPomUpdater implements ManifestUpdater {
             if (!VersionUtils.isUpgrade(declared, target)) return null
 
             changes << UpdaterSupport.change(relativePath, fix, declared, target)
-            return UpdaterSupport.replaceGroup(block, VERSION, 1) { Matcher x -> x.group(1) == declared ? target : null }
+            return UpdaterSupport.replaceValue(block, VERSION_RE) { String value -> value == declared ? target : null }
         }
         return [content: updated, changes: changes, properties: properties, notes: notes]
     }
@@ -67,17 +62,15 @@ class MavenPomUpdater implements ManifestUpdater {
     @NonCPS
     Map updateProperties(String relativePath, String content, List<Map> properties) {
         List changes = []
-        String updated = UpdaterSupport.replaceGroup(content, PROPERTIES, 1) { Matcher m ->
-            String section = m.group(1)
+        String updated = UpdaterSupport.replaceValue(content, PROPERTIES_RE) { String section ->
             String newSection = section
-            for (Map prop : properties) {
-                String name   = prop.name as String
-                String target = prop.targetVersion as String
-                Pattern p = Pattern.compile('<' + Pattern.quote(name) + '>\\s*([^<]*?)\\s*</' + Pattern.quote(name) + '>')
-                newSection = UpdaterSupport.replaceGroup(newSection, p, 1) { Matcher x ->
-                    String value = x.group(1)
+            properties.each { property ->
+                String name = property.name as String
+                String target = property.targetVersion as String
+                String regex = '(<' + UpdaterSupport.quote(name) + '>\\s*)([^<]*?)(\\s*</' + UpdaterSupport.quote(name) + '>)'
+                newSection = UpdaterSupport.replaceValue(newSection, regex) { String value ->
                     if (!VersionUtils.isConcreteVersion(value) || !VersionUtils.isUpgrade(value, target)) return null
-                    changes << UpdaterSupport.propertyChange(relativePath, prop, value)
+                    changes << UpdaterSupport.propertyChange(relativePath, property, value)
                     return target
                 }
             }
@@ -88,7 +81,13 @@ class MavenPomUpdater implements ManifestUpdater {
 
     @NonCPS
     private static String tag(String xml, String name) {
-        Matcher m = Pattern.compile('<' + name + '>\\s*([^<]*?)\\s*</' + name + '>').matcher(xml)
-        return m.find() ? m.group(1) : null
+        def matcher = (xml ?: '') =~ ('<' + name + '>\\s*([^<]*?)\\s*</' + name + '>')
+        return matcher ? ((matcher[0] as List)[1] as String) : null
+    }
+
+    @NonCPS
+    private static String propertyName(String declared) {
+        def matcher = (declared ?: '') =~ PROPERTY_REF_RE
+        return matcher ? ((matcher[0] as List)[1] as String) : null
     }
 }

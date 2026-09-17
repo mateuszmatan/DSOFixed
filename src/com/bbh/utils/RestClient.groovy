@@ -1,10 +1,9 @@
 package com.bbh.utils
 
 import com.cloudbees.groovy.cps.NonCPS
-import groovy.json.JsonOutput
-import groovy.json.JsonSlurperClassic
 
 class RestClient implements Serializable {
+
     private final def script
 
     RestClient(def script) {
@@ -12,23 +11,23 @@ class RestClient implements Serializable {
     }
 
     def getJson(String url, Map auth, String label) {
-        Map r = request('GET', url, null, auth, label)
-        ensureSuccess(r, label)
-        return parseJson(r.body as String)
+        Map response = request('GET', url, null, auth, label)
+        ensureSuccess(response, label)
+        return parseJson(response.body as String)
     }
 
     def postJson(String url, def payload, Map auth, String label) {
-        Map r = request('POST', url, toJson(payload), auth, label)
-        ensureSuccess(r, label)
-        return parseJson(r.body as String)
+        Map response = request('POST', url, payload, auth, label)
+        ensureSuccess(response, label)
+        return parseJson(response.body as String)
     }
 
-    Map request(String method, String url, String jsonBody, Map auth, String label) {
+    Map request(String method, String url, def payload, Map auth, String label) {
         String tmpDir = script.env.WORKSPACE_TMP ?: "${script.env.WORKSPACE}@tmp"
         String bodyFile = ''
-        if (jsonBody != null) {
-            bodyFile = "${tmpDir}/rest-body-${System.nanoTime()}.json"
-            script.writeFile(file: bodyFile, text: jsonBody, encoding: 'UTF-8')
+        if (payload != null) {
+            bodyFile = "${tmpDir}/rest-body-${System.currentTimeMillis()}.json"
+            script.writeJSON(file: bodyFile, json: payload)
         }
         String bodyArgs = bodyFile ? "-H 'Content-Type: application/json' --data-binary @'${BuildUtils.escapeForSingleQuotes(bodyFile)}'" : ''
         String out
@@ -44,6 +43,11 @@ curl -sS -X '${method}' ${authArgs(auth)} -H 'Accept: application/json' ${bodyAr
         return splitStatus(out)
     }
 
+    def parseJson(String text) {
+        if (!text?.trim()) return null
+        return script.readJSON(text: text)
+    }
+
     void ensureSuccess(Map response, String label) {
         int status = (response.status ?: 0) as int
         if (status < 200 || status > 299) {
@@ -52,25 +56,24 @@ curl -sS -X '${method}' ${authArgs(auth)} -H 'Accept: application/json' ${bodyAr
     }
 
     @NonCPS
-    static def parseJson(String text) {
-        if (!text?.trim()) return null
-        return new JsonSlurperClassic().parseText(text)
-    }
-
-    @NonCPS
-    static String toJson(def payload) {
-        return JsonOutput.toJson(payload)
-    }
-
-    @NonCPS
     static String urlEncode(String value) {
-        return URLEncoder.encode(value ?: '', 'UTF-8').replace('+', '%20')
+        return (value ?: '')
+                .replace('%', '%25').replace(' ', '%20').replace('"', '%22').replace('#', '%23')
+                .replace('&', '%26').replace('+', '%2B').replace('/', '%2F').replace(':', '%3A')
+                .replace(';', '%3B').replace('<', '%3C').replace('=', '%3D').replace('>', '%3E')
+                .replace('?', '%3F').replace('@', '%40').replace('\\', '%5C')
+                .replace('{', '%7B').replace('|', '%7C').replace('}', '%7D')
     }
 
     @NonCPS
-    static String abbreviate(String s, int max) {
-        if (s == null) return ''
-        return s.length() > max ? s.substring(0, max) + '...' : s
+    static String urlDecode(String value) {
+        return (value ?: '').replace('%20', ' ').replace('+', ' ')
+    }
+
+    @NonCPS
+    static String abbreviate(String text, int max) {
+        if (text == null) return ''
+        return text.length() > max ? text.substring(0, max) + '...' : text
     }
 
     @NonCPS
@@ -87,6 +90,6 @@ curl -sS -X '${method}' ${authArgs(auth)} -H 'Accept: application/json' ${bodyAr
         int idx = text.lastIndexOf('\n')
         String code = (idx >= 0 ? text.substring(idx + 1) : text).trim()
         String body = idx >= 0 ? text.substring(0, idx) : ''
-        return [status: (code ==~ /\d+/) ? Integer.parseInt(code) : 0, body: body]
+        return [status: (code ==~ /\d+/) ? code.toInteger() : 0, body: body]
     }
 }

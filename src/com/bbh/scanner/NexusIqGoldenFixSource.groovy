@@ -87,7 +87,7 @@ class NexusIqGoldenFixSource implements GoldenFixSource {
     @NonCPS
     static List<Map> selectCandidates(def report, int minThreat, boolean onlyDirect, List ecosystems) {
         List<Map> out = []
-        Set<String> seen = new HashSet<String>()
+        List seen = []
         List components = (report?.components ?: []) as List
         for (def comp : components) {
             def identifier = comp?.componentIdentifier
@@ -116,7 +116,9 @@ class NexusIqGoldenFixSource implements GoldenFixSource {
             }
             String version = coordinates.version as String
             if (!name || !version) continue
-            if (!seen.add(GoldenFix.key(format, group, name) + '@' + version)) continue
+            String seenKey = GoldenFix.key(format, group, name) + '@' + version
+            if (seen.contains(seenKey)) continue
+            seen << seenKey
 
             out << [
                     ecosystem          : format,
@@ -154,6 +156,6 @@ class NexusIqGoldenFixSource implements GoldenFixSource {
     static String versionFromPurl(String purl) {
         if (!purl) return null
         def m = (purl =~ /@([^?#]+)/)
-        return m.find() ? URLDecoder.decode(m.group(1), 'UTF-8') : null
+        return m.find() ? (m.group(1) ?: '').replace('%20', ' ') : null
     }
 }

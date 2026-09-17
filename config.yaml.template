@@ -80,7 +80,7 @@ projects:
         jobs:
           - name:       "MyApp-GUI - smoke"
             type:       local
-            job:        ""
+            job:        "myapp/smoke-tests"
             timeoutMin: 15
           - name: "MyApp-GUI - login smoke"               # remote job by full URL
             url:  "https://jenkins-a.bbh.com/job/smoke/job/myapp-login"
@@ -91,17 +91,17 @@ projects:
           - "https://jenkins-c.bbh.com/job/smoke/job/myapp-reports"   # URL only, name derived from the URL
         urls:                              # optional shorthand list: one remote job per URL
           - "https://jenkins-c.bbh.com/job/smoke/job/myapp-search"
-      regression:
+      regression:                          # at least one working job is required, more are allowed
         jobs:
           - name:       "MyApp-GUI - regression"
             type:       local
-            job:        ""
+            job:        "myapp/regression-tests"
             timeoutMin: 60
-      performance:
+      performance:                         # at least one working job is required, more are allowed
         jobs:
           - name:       "MyApp-GUI - performance"
             type:       local
-            job:        ""
+            job:        "myapp/performance-tests"
             timeoutMin: 120
 
     scm:
@@ -170,13 +170,33 @@ projects:
     dast:
       enabled: false
 
+    scm:
+      bitbucket:
+        url:           "https://bitbucket.bbh.com/projects/MYAPP/repos/myapp"
+        credentialsId: "bitbucket-http-credentials"
+
+    goldenFix:
+      enabled: true
+
     tests:
-      smoke:
+      regression:                          # at least one working job is required, more are allowed
+        jobs:
+          - name:       "MyApp-Backend - regression"
+            type:       local
+            job:        "myapp/api-regression-tests"
+            timeoutMin: 60
+      smoke:                               # at least one working job is required, more are allowed
         jobs:
           - name:       "MyApp-Backend - smoke"
             type:       local
-            job:        ""
+            job:        "myapp/api-smoke-tests"
             timeoutMin: 15
+      performance:                         # at least one working job is required, more are allowed
+        jobs:
+          - name:       "MyApp-Backend - performance"
+            type:       local
+            job:        "myapp/api-performance-tests"
+            timeoutMin: 120
 
     deploy:
       vm:

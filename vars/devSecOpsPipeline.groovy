@@ -126,7 +126,7 @@ def copyImageToNexus()                      { _setup(); _openshift.copyImageToNe
 def checkDeploymentRepo()                   { _setup(); _openshift.checkDeploymentRepo() }
 def deployOpenshift(String envName)         { _setup(); _openshift.deploy(envName) }
 def nexusDelivery(String envName)           { _setup(); _openshift.deliverToNexus(envName) }
-def pushToNexus()                           {_setup();  _vmDeploy.pushToNexus()}
+def pushToNexus(String projectName)         { _setup(); _vmDeploy.pushToNexus(projectName) }
 
 def generateHtmlReport()      { _setup(); _report.generate() }
 def feedInfluxDB(String pipelineType)            { _setup(); _influx.send(pipelineType) }
@@ -230,11 +230,11 @@ def call(Map config = [:]) {
                 steps {
                     script {
                         dsl.stageStart('Dependencies scan (Nexus IQ)')
-//                        def projects = dsl.getProjects()
-//                        for (pName in projects) {
-//                            dsl.switchProject(pName)
-//                            dsl.depVulnScan()
-//                        }
+                        def projects = dsl.getProjects()
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.depVulnScan()
+                        }
                     }
                 }
                 post {
@@ -245,49 +245,29 @@ def call(Map config = [:]) {
                 }
             }
 
-            stage('SCA (SonarQube)') {
-                steps {
-                    script {
-                        dsl.stageStart('SCA (SonarQube)')
-//                        def projects = dsl.getProjects()
-//                        for (pName in projects) {
-//                            dsl.switchProject(pName)
-//                            dsl.codeQualityScan()
-//                            dsl.sonarscanEnforcePolicy()
-//                        }
-                    }
-                }
-                post {
-                    always   { script { dsl.stageDone('SCA (SonarQube)') } }
-                    success  { script { dsl.stagePass('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'PASS') } }
-                    failure  { script { dsl.stageFail('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'WARN') } }
-                }
-            }
-
             stage('SAST - Static Application Security Tests - HCL AppScan') {
                 steps {
                     script {
                         dsl.stageStart('SAST - Static Application Security Tests - HCL AppScan')
-//                        dsl.appscanSetup()
-//                        def projects = dsl.getProjects()
-//                        for (pName in projects) {
-//                            dsl.switchProject(pName)
-//                            dsl.appscanResolveSourceDir()
-//                        }
-//                        dsl.appscanLogin()
-//                        for (pName in projects) {
-//                            dsl.switchProject(pName)
-//                            dsl.appscanGenerateIRX()
-//                            dsl.appscanQueue(config)
-//                        }
-//                        for (pName in projects) {
-//                            dsl.switchProject(pName)
-//                            dsl.appscanWait()
-//                            dsl.appscanDownloadReports()
-//                            dsl.appscanRenameSastReport()
-//                            sastVulns += dsl.appscanEnforcePolicy()
-//                       }
+                        dsl.appscanSetup()
+                        def projects = dsl.getProjects()
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.appscanResolveSourceDir()
+                        }
+                        dsl.appscanLogin()
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.appscanGenerateIRX()
+                            dsl.appscanQueue(config)
+                        }
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.appscanWait()
+                            dsl.appscanDownloadReports()
+                            dsl.appscanRenameSastReport()
+                            sastVulns += dsl.appscanEnforcePolicy()
+                       }
                     }
                 }
                 post {
@@ -295,6 +275,26 @@ def call(Map config = [:]) {
                     success  { script { dsl.stagePass('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'PASS') } }
                     failure  { script { dsl.stageFail('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'FAIL') } }
                     unstable { script { dsl.stageWarn('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'WARN') } }
+                }
+            }
+
+            stage('SCA (SonarQube)') {
+                steps {
+                    script {
+                        dsl.stageStart('SCA (SonarQube)')
+                        def projects = dsl.getProjects()
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.codeQualityScan()
+                            dsl.sonarscanEnforcePolicy()
+                        }
+                    }
+                }
+                post {
+                    always   { script { dsl.stageDone('SCA (SonarQube)') } }
+                    success  { script { dsl.stagePass('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'PASS') } }
+                    failure  { script { dsl.stageFail('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'FAIL') } }
+                    unstable { script { dsl.stageWarn('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'WARN') } }
                 }
             }
 
@@ -312,7 +312,7 @@ def call(Map config = [:]) {
                                 dsl.buildDockerImage(pName)
                                 dsl.copyImageToNexus()
                             } else {
-//                                dsl.pushToNexus()
+                                dsl.pushToNexus(pName)
                             }
                         }
                     }
@@ -347,24 +347,6 @@ def call(Map config = [:]) {
                 }
             }
 
-            stage('Smoke tests') {
-                steps {
-                    script {
-                        dsl.stageStart('Smoke tests')
-                        def projects = dsl.getProjects()
-                        for (pName in projects) {
-                            dsl.switchProject(pName)
-                            dsl.smokeTests()
-                        }
-                    }
-                }
-                post {
-                    always  { script { dsl.stageDone('Smoke tests') } }
-                    success { script { dsl.stagePass('Smoke tests'); dsl.logStageResult('Smoke tests', 'PASS') } }
-                    failure { script { dsl.stageFail('Smoke tests'); dsl.logStageResult('Smoke tests', 'FAIL') } }
-                }
-            }
-
             stage('Regression tests (>60% user stories coverage)') {
                 steps {
                     script {
@@ -380,6 +362,24 @@ def call(Map config = [:]) {
                     always  { script { dsl.stageDone('Regression tests (>60% user stories coverage)') } }
                     success { script { dsl.stagePass('Regression tests (>60% user stories coverage)'); dsl.logStageResult('Regression tests (>60% user stories coverage)', 'PASS') } }
                     failure { script { dsl.stageFail('Regression tests (>60% user stories coverage)'); dsl.logStageResult('Regression tests (>60% user stories coverage)', 'FAIL') } }
+                }
+            }
+
+            stage('Smoke tests') {
+                steps {
+                    script {
+                        dsl.stageStart('Smoke tests')
+                        def projects = dsl.getProjects()
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.smokeTests()
+                        }
+                    }
+                }
+                post {
+                    always  { script { dsl.stageDone('Smoke tests') } }
+                    success { script { dsl.stagePass('Smoke tests'); dsl.logStageResult('Smoke tests', 'PASS') } }
+                    failure { script { dsl.stageFail('Smoke tests'); dsl.logStageResult('Smoke tests', 'FAIL') } }
                 }
             }
 
@@ -409,7 +409,6 @@ def call(Map config = [:]) {
                         for (pName in projects) {
                             dsl.switchProject(pName)
                             dastVulns += dsl.dastScan()
-                            dsl.appscanRenameDastReport()
                         }
                     }
                 }

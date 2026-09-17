@@ -3,41 +3,60 @@ package com.bbh.remediation.updater
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-
 class UpdaterSupport implements Serializable {
 
     @NonCPS
     static String fileName(String path) {
-        String p = (path ?: '').replace('\\', '/')
-        int i = p.lastIndexOf('/')
-        return i >= 0 ? p.substring(i + 1) : p
+        String normalized = (path ?: '').replace('\\', '/')
+        int index = normalized.lastIndexOf('/')
+        return index >= 0 ? normalized.substring(index + 1) : normalized
     }
 
     @NonCPS
-    static Map indexByKey(List<Map> fixes) {
+    static Map indexByKey(List fixes) {
         Map index = [:]
-        for (Map fix : (fixes ?: [])) index[fix.key as String] = fix
+        (fixes ?: []).each { index[it.key as String] = it }
         return index
     }
 
     @NonCPS
-    static String replaceGroup(String text, Pattern pattern, int group, Closure replacement) {
+    static String quote(String literal) {
+        return (literal ?: '').replaceAll(/([\\\.\[\]\{\}\(\)\*\+\-\?\^\$\|\/])/, '\\\\$1')
+    }
+
+    @NonCPS
+    static String replaceValue(String text, String regex, int prefixGroup, int valueGroup, int suffixGroup, Closure replacement) {
         if (text == null) return null
-        Matcher m = pattern.matcher(text)
-        StringBuilder out = new StringBuilder(text.length() + 64)
-        int last = 0
-        while (m.find()) {
-            if (m.start(group) < 0) continue
-            def repl = replacement.call(m)
-            if (repl != null) {
-                out.append(text, last, m.start(group)).append(repl as String)
-                last = m.end(group)
-            }
+        return text.replaceAll(regex) { List groups ->
+            String value = groups[valueGroup] as String
+            String replaced = replacement.call(value) as String
+            if (replaced == null) return groups[0] as String
+            String prefix = prefixGroup > 0 ? (groups[prefixGroup] ?: '') as String : ''
+            String suffix = suffixGroup > 0 ? (groups[suffixGroup] ?: '') as String : ''
+            return prefix + replaced + suffix
         }
-        out.append(text, last, text.length())
-        return out.toString()
+    }
+
+    @NonCPS
+    static String replaceValue(String text, String regex, Closure replacement) {
+        return replaceValue(text, regex, 1, 2, 3, replacement)
+    }
+
+    @NonCPS
+    static String replaceMatch(String text, String regex, Closure replacement) {
+        if (text == null) return null
+        return text.replaceAll(regex) { List groups ->
+            String replaced = replacement.call(groups) as String
+            return replaced == null ? (groups[0] as String) : replaced
+        }
+    }
+
+    @NonCPS
+    static List findAll(String text, String regex, int group) {
+        List out = []
+        def matcher = (text ?: '') =~ regex
+        matcher.each { match -> out << ((match instanceof List) ? match[group] : match) }
+        return out
     }
 
     @NonCPS
@@ -60,7 +79,7 @@ class UpdaterSupport implements Serializable {
                 file           : path,
                 ecosystem      : property.ecosystem,
                 component      : (property.components as List).join(', '),
-                componentKeys  : new ArrayList(property.componentKeys as List),
+                componentKeys  : [] + (property.componentKeys as List),
                 from           : from,
                 to             : property.targetVersion,
                 property       : property.name,
@@ -93,33 +112,31 @@ class UpdaterSupport implements Serializable {
     }
 
     @NonCPS
-    static List<Map> mergePropertyRequests(List<Map> requests) {
-        Map byName = new LinkedHashMap()
-        for (Map r : (requests ?: [])) {
-            Map existing = byName[r.name] as Map
+    static List mergePropertyRequests(List requests) {
+        Map byName = [:]
+        (requests ?: []).each { request ->
+            Map existing = byName[request.name] as Map
             if (!existing) {
-                byName[r.name] = [
-                        name         : r.name,
-                        ecosystem    : r.ecosystem,
-                        targetVersion: r.targetVersion,
-                        componentKeys: new ArrayList(r.componentKeys as List),
-                        components   : new ArrayList(r.components as List),
-                        referencedIn : new ArrayList(r.referencedIn as List)
+                byName[request.name] = [
+                        name         : request.name,
+                        ecosystem    : request.ecosystem,
+                        targetVersion: request.targetVersion,
+                        componentKeys: [] + (request.componentKeys as List),
+                        components   : [] + (request.components as List),
+                        referencedIn : [] + (request.referencedIn as List)
                 ]
-                continue
+            } else {
+                existing.targetVersion = VersionUtils.max(existing.targetVersion as String, request.targetVersion as String)
+                addAllUnique(existing.componentKeys as List, request.componentKeys as List)
+                addAllUnique(existing.components as List, request.components as List)
+                addAllUnique(existing.referencedIn as List, request.referencedIn as List)
             }
-            existing.targetVersion = VersionUtils.max(existing.targetVersion as String, r.targetVersion as String)
-            addAllUnique(existing.componentKeys as List, r.componentKeys as List)
-            addAllUnique(existing.components as List, r.components as List)
-            addAllUnique(existing.referencedIn as List, r.referencedIn as List)
         }
-        return new ArrayList(byName.values())
+        return byName.values().toList()
     }
 
     @NonCPS
-    private static void addAllUnique(List target, List source) {
-        for (def item : (source ?: [])) {
-            if (!target.contains(item)) target << item
-        }
+    static void addAllUnique(List target, List source) {
+        (source ?: []).each { if (!target.contains(it)) target << it }
     }
 }

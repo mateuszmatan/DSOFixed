@@ -78,16 +78,25 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
     <tr><td>1</td><td>Monitor source changes</td><td>Checkout, AppScan setup, IRX generation per project</td></tr>
     <tr><td>2</td><td>Unit tests</td><td>Build tool tests plus JaCoCo / lcov line coverage check</td></tr>
     <tr><td>3</td><td>Dependencies scan (Nexus IQ)</td><td>Dependency scan with policy enforcement and an automatic GoldenFix pull request on violation</td></tr>
-    <tr><td>4</td><td>SCA (SonarQube)</td><td>Static code analysis and quality gate</td></tr>
-    <tr><td>5</td><td>SAST — HCL AppScan</td><td>Static Application Security Testing, queued per project</td></tr>
+    <tr><td>4</td><td>SAST — HCL AppScan</td><td>Static Application Security Testing, queued per project</td></tr>
+    <tr><td>5</td><td>SCA (SonarQube)</td><td>Static code analysis and quality gate</td></tr>
     <tr><td>6</td><td>Nexus delivery (static analysis passed)</td><td>Publish the snapshot artifact, only when the library security policy is met</td></tr>
     <tr><td>7</td><td>Lower test region deployment</td><td>Deploy to RD (VM over SSH or OpenShift)</td></tr>
-    <tr><td>8</td><td>Smoke tests</td><td>Trigger any number of local and remote smoke jobs in parallel</td></tr>
-    <tr><td>9</td><td>Regression tests</td><td>Trigger regression jobs</td></tr>
-    <tr><td>10</td><td>Performance tests</td><td>Trigger performance jobs</td></tr>
+    <tr><td>8</td><td>Regression tests</td><td>Trigger regression jobs, at least one job must be configured</td></tr>
+    <tr><td>9</td><td>Smoke tests</td><td>Any number of local and remote smoke jobs in parallel, at least one must be configured</td></tr>
+    <tr><td>10</td><td>Performance tests</td><td>Trigger performance jobs, at least one job must be configured</td></tr>
     <tr><td>11</td><td>DAST — HCL AppScan</td><td>Dynamic Application Security Testing, report downloaded as HTML and PDF</td></tr>
     <tr><td>12</td><td>Nexus delivery (safe artifact)</td><td>Publish the release artifact, only when the library security policy is met</td></tr>
     <tr><td>13</td><td>Higher test environment deployment</td><td>Deploy to QC, only on request and only when the library security policy is met</td></tr>
+  </table>
+
+  <h3>Which pipeline to use</h3>
+  <p>The library ships three entry points that share the same services, thresholds, release gate and report.</p>
+  <table>
+    <tr><th>Entry point</th><th>Runs</th><th>Use it when</th></tr>
+    <tr><td><code>devSecOpsPipeline</code></td><td>All thirteen stages in one build</td><td>One job should cover the whole flow</td></tr>
+    <tr><td><code>devSecOpsSecurityPipeline</code></td><td>Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery, then triggers the extended pipeline</td><td>The static part runs on every commit and the rest is a separate job</td></tr>
+    <tr><td><code>devSecOpsExtendedPipeline</code></td><td>RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment</td><td>Downstream of the security pipeline, inherits the release verdict through <code>release-gate.json</code></td></tr>
   </table>
 
   <h3>After every build the library</h3>
@@ -172,6 +181,11 @@ src/com/bbh/
     <tr><td>Copy Artifact</td><td>Passing <code>config.yaml</code> and the release gate verdict to the extended pipeline</td></tr>
     <tr><td>OpenShift Client (optional)</td><td><code>openshift.withCluster()</code></td></tr>
   </table>
+
+  <div class="callout info">
+    <span class="callout-icon">i</span>
+    <div class="callout-body"><strong>Script security.</strong> The library runs inside the Jenkins script sandbox and uses no construct that requires an administrator to approve a signature, so onboarding a project needs no entries under <em>In-process Script Approval</em>.</div>
+  </div>
 
   <h3>Credentials</h3>
   <table>
@@ -397,7 +411,7 @@ src/com/bbh/
   <p>Runs for projects with <code>dast.enabled: true</code>. The report is downloaded as HTML, which is parsed for the vulnerability counts, and as <strong>PDF</strong>. Both are archived and linked from the pipeline report, exactly like the SAST report.</p>
 
   <h3>Stages 6 to 10: delivery and tests</h3>
-  <p>Every test stage runs <strong>all</strong> configured jobs, even when some fail, and reports one aggregated failure at the end. A stage may contain hundreds of jobs. At most <code>tests.maxParallel</code> jobs run at the same time, with a worker pool above that limit. Remote jobs can be given as a full URL without any Remote Jenkins configuration.</p>
+  <p>Stage 6 publishes the snapshot artifact, stage 7 deploys to RD, then the tests run in the order regression, smoke, performance, followed by DAST. Each test stage needs at least one configured job. Every test stage runs <strong>all</strong> configured jobs, even when some fail, and reports one aggregated failure at the end. A stage may contain hundreds of jobs. At most <code>tests.maxParallel</code> jobs run at the same time, with a worker pool above that limit. Remote jobs can be given as a full URL without any Remote Jenkins configuration.</p>
 
   <h3>Project thresholds and the release gate</h3>
   <p><strong>Project thresholds</strong> in <code>config.yaml</code> decide whether the pipeline keeps running. They may be raised for SAST, SCA, Nexus IQ and coverage only. Exceeding them fails the stage and the pipeline.</p>
@@ -408,6 +422,7 @@ src/com/bbh/
     <li>the RD deployment still runs, so developers can work with the build,</li>
     <li>the build is marked UNSTABLE, the blocked stage is shown as <code>BLOCKED</code> and the report shows a <strong>Release policy</strong> card with every violation.</li>
   </ul>
+  <p>Any stage that did not pass blocks the release too. If regression, smoke, performance or DAST fails in the extended pipeline, the artifact is not published to the release repository and QC stays unavailable.</p>
   <p>Each pipeline judges the results it owns and hands its verdict to the next one through the archived <code>release-gate.json</code>, so a violation found in the security pipeline also blocks the release in the extended pipeline.</p>
 </div>
 

@@ -5,9 +5,6 @@ import com.bbh.remediation.port.ManifestUpdater
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-
 class PipUpdater implements ManifestUpdater {
 
     String ecosystem() { return GoldenFix.PYPI }
@@ -27,31 +24,33 @@ class PipUpdater implements ManifestUpdater {
         boolean pyproject = UpdaterSupport.fileName(relativePath) == 'pyproject.toml'
         String updated = content
 
-        for (Map fix : fixes) {
-            String np = namePattern(fix.name as String)
+        fixes.each { fix ->
+            String namePattern = namePattern(fix.name as String)
             if (!pyproject) {
-                Pattern p = Pattern.compile('(?im)^[ \\t]*' + np + '(?:[ \\t]*\\[[^\\]\\r\\n]*\\])?[ \\t]*(===|==|~=|>=)[ \\t]*([^\\s;,#\\\\]+)([^\\r\\n]*)')
+                String regex = '(?im)(^[ \\t]*' + namePattern + '(?:[ \\t]*\\[[^\\]\\r\\n]*\\])?[ \\t]*)(===|==|~=|>=)([ \\t]*)([^\\s;,#\\\\]+)([^\\r\\n]*)'
                 if (content.contains('--hash=')) {
-                    if (p.matcher(updated).find()) {
+                    if (UpdaterSupport.findAll(updated, regex, 4)) {
                         notes << UpdaterSupport.note(relativePath, fix, 'file uses --hash pinning - regenerate it with pip-compile')
                     }
-                    continue
+                    return
                 }
-                updated = UpdaterSupport.replaceGroup(updated, p, 2) { Matcher m ->
-                    return bump(relativePath, fix, m.group(1), m.group(2), m.group(3), changes, notes)
+                updated = UpdaterSupport.replaceMatch(updated, regex) { List g ->
+                    String replaced = bump(relativePath, fix, g[2] as String, g[4] as String, g[5] as String, changes, notes)
+                    return replaced == null ? null : (g[1] as String) + (g[2] as String) + (g[3] as String) + replaced + (g[5] as String)
                 }
             } else {
-                Pattern pep508 = Pattern.compile('(?i)(["\'])' + np + '(?:\\[[^\\]"\']*\\])?\\s*(===|==|~=|>=)\\s*([^"\',;\\s]+)([^"\']*)\\1')
-                updated = UpdaterSupport.replaceGroup(updated, pep508, 3) { Matcher m ->
-                    return bump(relativePath, fix, m.group(2), m.group(3), m.group(4), changes, notes)
+                String pep508 = '(?i)([\'"]' + namePattern + '(?:\\[[^\\]\'"]*\\])?\\s*)(===|==|~=|>=)(\\s*)([^\'",;\\s]+)([^\'"]*[\'"])'
+                updated = UpdaterSupport.replaceMatch(updated, pep508) { List g ->
+                    String replaced = bump(relativePath, fix, g[2] as String, g[4] as String, g[5] as String, changes, notes)
+                    return replaced == null ? null : (g[1] as String) + (g[2] as String) + (g[3] as String) + replaced + (g[5] as String)
                 }
-                List<Pattern> poetry = [
-                        Pattern.compile('(?im)^[ \\t]*["\']?' + np + '["\']?[ \\t]*=[ \\t]*"(\\^|~|==|>=)?[ \\t]*(\\d[^"]*)"'),
-                        Pattern.compile('(?im)^[ \\t]*["\']?' + np + '["\']?[ \\t]*=[ \\t]*\\{[^}\\r\\n]*?version[ \\t]*=[ \\t]*"(\\^|~|==|>=)?[ \\t]*(\\d[^"]*)"')
+                List poetry = [
+                        '(?im)(^[ \\t]*[\'"]?' + namePattern + '[\'"]?[ \\t]*=[ \\t]*"(?:\\^|~|==|>=)?[ \\t]*)(\\d[^"]*)(")',
+                        '(?im)(^[ \\t]*[\'"]?' + namePattern + '[\'"]?[ \\t]*=[ \\t]*\\{[^}\\r\\n]*?version[ \\t]*=[ \\t]*"(?:\\^|~|==|>=)?[ \\t]*)(\\d[^"]*)(")'
                 ]
-                for (Pattern p : poetry) {
-                    updated = UpdaterSupport.replaceGroup(updated, p, 2) { Matcher m ->
-                        return bump(relativePath, fix, m.group(1) ?: '==', m.group(2), '', changes, notes)
+                poetry.each { regex ->
+                    updated = UpdaterSupport.replaceValue(updated, regex) { String declared ->
+                        return bump(relativePath, fix, '==', declared, '', changes, notes)
                     }
                 }
             }
@@ -82,7 +81,6 @@ class PipUpdater implements ManifestUpdater {
 
     @NonCPS
     private static String namePattern(String name) {
-        List parts = GoldenFix.normalizePypiName(name).tokenize('-')
-        return parts.collect { Pattern.quote(it as String) }.join('[-_.]+')
+        return GoldenFix.normalizePypiName(name).tokenize('-').collect { UpdaterSupport.quote(it as String) }.join('[-_.]+')
     }
 }

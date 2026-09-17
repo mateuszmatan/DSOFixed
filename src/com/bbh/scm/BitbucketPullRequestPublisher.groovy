@@ -18,11 +18,13 @@ class BitbucketPullRequestPublisher implements PullRequestPublisher {
 
     Map repositoryInfo(Map scmCfg) {
         Map repo = BitbucketRepository.parse(scmCfg)
+        if (repo.error) script.error("[GOLDENFIX] ${repo.error}")
         return [webUrl: repo.webUrl, cloneUrl: repo.cloneUrl, cloud: repo.type == 'cloud']
     }
 
     Map createPullRequest(Map scmCfg, Map pullRequest) {
         Map repo = BitbucketRepository.parse(scmCfg)
+        if (repo.error) script.error("[GOLDENFIX] ${repo.error}")
         String credentialsId = (scmCfg.credentialsId ?: '') as String
         if (!credentialsId) script.error("[GOLDENFIX] scm.bitbucket.credentialsId is required to raise a pull request")
         List reviewers = (scmCfg.reviewers instanceof List) ? (scmCfg.reviewers as List) : []
@@ -49,7 +51,7 @@ class BitbucketPullRequestPublisher implements PullRequestPublisher {
 
     private Map createServer(Map repo, Map pullRequest, List reviewers, Map auth) {
         String api = "${repo.apiBase}/pull-requests"
-        Map response = rest.request('POST', api, RestClient.toJson(serverPayload(repo, pullRequest, reviewers)), auth,
+        Map response = rest.request('POST', api, serverPayload(repo, pullRequest, reviewers), auth,
                 "Bitbucket: create pull request ${pullRequest.title}")
         if ((response.status as int) == 409) {
             String at = RestClient.urlEncode("refs/heads/${pullRequest.sourceBranch}".toString())
@@ -58,16 +60,16 @@ class BitbucketPullRequestPublisher implements PullRequestPublisher {
             if (first) return [id: first.id?.toString(), url: serverPullRequestUrl(first, repo), existing: true]
         }
         rest.ensureSuccess(response, 'Bitbucket: create pull request')
-        def json = RestClient.parseJson(response.body as String)
+        def json = rest.parseJson(response.body as String)
         return [id: json?.id?.toString(), url: serverPullRequestUrl(json, repo), existing: false]
     }
 
     private Map createCloud(Map repo, Map pullRequest, List reviewers, Map auth) {
         String api = "${repo.apiBase}/repositories/${RestClient.urlEncode(repo.workspace as String)}/${RestClient.urlEncode(repo.repoSlug as String)}/pullrequests"
-        Map response = rest.request('POST', api, RestClient.toJson(cloudPayload(pullRequest, reviewers)), auth,
+        Map response = rest.request('POST', api, cloudPayload(pullRequest, reviewers), auth,
                 "Bitbucket Cloud: create pull request ${pullRequest.title}")
         rest.ensureSuccess(response, 'Bitbucket Cloud: create pull request')
-        def json = RestClient.parseJson(response.body as String)
+        def json = rest.parseJson(response.body as String)
         String url = (json?.links?.html?.href ?: "${repo.webUrl}/pull-requests/${json?.id}") as String
         return [id: json?.id?.toString(), url: url, existing: false]
     }

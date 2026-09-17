@@ -2,8 +2,6 @@ package com.bbh.core
 
 import com.bbh.utils.BuildUtils
 import com.cloudbees.groovy.cps.NonCPS
-import groovy.json.JsonOutput
-import groovy.json.JsonSlurperClassic
 
 class ReleaseGate implements Serializable {
 
@@ -13,6 +11,8 @@ class ReleaseGate implements Serializable {
             niq : 'Dependencies (Nexus IQ)',
             dast: 'DAST (AppScan)'
     ]
+
+    static final List BLOCKING_STAGE_STATUSES = ['FAIL', 'BLOCKED']
 
     private final def           script
     private final PipelineState state
@@ -35,30 +35,46 @@ class ReleaseGate implements Serializable {
     Map evaluate() {
         Map gateCfg = (state.cfgDefaults.releaseGate ?: [:]) as Map
         List scanners = (gateCfg.scanners ?: ['sast', 'sca', 'niq', 'dast']) as List
-        Map coverage = BuildUtils.booleanValue(gateCfg.requireCoverage, true) ? new HashMap(state.coverage ?: [:]) : [:]
-        return decide(state.projectsVulnCounts ?: [:], state.hardLimits ?: [:], scanners, coverage, upstreamViolations())
+        Map coverage = BuildUtils.booleanValue(gateCfg.requireCoverage, true) ? ([:] + (state.coverage ?: [:])) : [:]
+        List carried = []
+        carried.addAll(upstreamViolations())
+        carried.addAll(failedStageViolations())
+        return decide(state.projectsVulnCounts ?: [:], state.hardLimits ?: [:], scanners, coverage, carried)
     }
 
     void publish() {
         Map decision = evaluate()
-        script.writeFile(file: stateFileName(), text: JsonOutput.toJson([
-                job       : script.env.JOB_NAME ?: '',
-                build     : script.env.BUILD_NUMBER ?: '',
+        script.writeJSON(file: stateFileName(), json: [
+                job       : (script.env.JOB_NAME ?: '') as String,
+                build     : (script.env.BUILD_NUMBER ?: '') as String,
                 allowed   : decision.allowed,
                 violations: decision.violations
-        ]))
+        ])
         script.echo "[RELEASE-GATE] State written to ${stateFileName()} (allowed=${decision.allowed})"
     }
 
-    List<String> upstreamViolations() {
+    List upstreamViolations() {
         String file = stateFileName()
         if (!script.fileExists(file)) return []
         try {
-            return parseViolations(script.readFile(file))
+            def parsed = script.readJSON(file: file)
+            List out = []
+            (parsed?.violations ?: []).each { out << "${it} (previous pipeline)".toString() }
+            return out
         } catch (Exception e) {
             script.echo "[RELEASE-GATE] Could not read ${file}: ${e.message}"
             return []
         }
+    }
+
+    List failedStageViolations() {
+        List out = []
+        (state.stageResults ?: [:]).each { name, status ->
+            if (BLOCKING_STAGE_STATUSES.contains(status as String)) {
+                out << "stage '${name}' did not pass (${status})".toString()
+            }
+        }
+        return out
     }
 
     private String stateFileName() {
@@ -66,25 +82,18 @@ class ReleaseGate implements Serializable {
     }
 
     @NonCPS
-    static List<String> parseViolations(String json) {
-        def parsed = new JsonSlurperClassic().parseText(json ?: '{}')
-        List violations = (parsed?.violations ?: []) as List
-        return violations.collect { "${it} (previous pipeline)".toString() }
-    }
+    static Map decide(Map projectsVulnCounts, Map hardLimits, List scanners, Map coverage, List carriedViolations) {
+        List violations = []
+        violations.addAll(carriedViolations ?: [])
 
-    @NonCPS
-    static Map decide(Map projectsVulnCounts, Map hardLimits, List scanners, Map coverage, List upstreamViolations) {
-        List violations = new ArrayList(upstreamViolations ?: [])
-
-        for (def entry : projectsVulnCounts.entrySet()) {
-            String project = entry.key as String
-            Map byScanner = (entry.value ?: [:]) as Map
-            for (def scanner : scanners) {
-                Map counts = byScanner.get(scanner) as Map
-                if (counts == null) continue
-                Map limits = (hardLimits.get(scanner) ?: [:]) as Map
-                String label = (SCANNER_LABELS[scanner] ?: scanner) as String
-                violations.addAll(severityViolations(project, label, counts, limits))
+        (projectsVulnCounts ?: [:]).each { project, byScanner ->
+            (scanners ?: []).each { scanner ->
+                Map counts = ((byScanner ?: [:]) as Map).get(scanner) as Map
+                if (counts != null) {
+                    Map limits = ((hardLimits ?: [:]).get(scanner) ?: [:]) as Map
+                    String label = (SCANNER_LABELS[scanner] ?: scanner) as String
+                    violations.addAll(severityViolations(project as String, label, counts, limits))
+                }
             }
         }
 
@@ -97,7 +106,7 @@ class ReleaseGate implements Serializable {
         }
 
         boolean allowed = violations.isEmpty()
-        String reason = allowed ? '' : ("Nexus release and QC deployment blocked - the library security policy is not met: " + violations.join(' | '))
+        String reason = allowed ? '' : ('Nexus release and QC deployment blocked - the library security policy is not met: ' + violations.join(' | '))
         String log = allowed
                 ? '[RELEASE-GATE] Library security policy met - Nexus release and QC deployment allowed'
                 : "[RELEASE-GATE] ${reason}".toString()
@@ -105,8 +114,8 @@ class ReleaseGate implements Serializable {
     }
 
     @NonCPS
-    private static List<String> severityViolations(String project, String label, Map counts, Map limits) {
-        List<String> out = []
+    private static List severityViolations(String project, String label, Map counts, Map limits) {
+        List out = []
         out.addAll(severityViolation(project, label, 'critical', counts, limits, 'maxCritical'))
         out.addAll(severityViolation(project, label, 'high', counts, limits, 'maxHigh'))
         out.addAll(severityViolation(project, label, 'medium', counts, limits, 'maxMedium'))
@@ -114,7 +123,7 @@ class ReleaseGate implements Serializable {
     }
 
     @NonCPS
-    private static List<String> severityViolation(String project, String label, String severity, Map counts, Map limits, String limitKey) {
+    private static List severityViolation(String project, String label, String severity, Map counts, Map limits, String limitKey) {
         int value = (counts.get(severity) ?: 0) as int
         int limit = (limits.get(limitKey) ?: 0) as int
         if (value <= limit) return []

@@ -423,7 +423,7 @@ class BuildService implements Serializable {
         for (int i = 0; i < raw.size(); i++) {
             def entry = raw[i]
             if (entry == null) continue
-            Map job = new LinkedHashMap(defaults)
+            Map job = [:] + defaults
             if (entry instanceof Map) {
                 job.putAll(entry as Map)
             } else {
@@ -447,10 +447,15 @@ class BuildService implements Serializable {
         if (!ref) return "job-${idx + 1}".toString()
         def m = (ref =~ /\/job\/([^\/?#]+)/)
         List parts = []
-        while (m.find()) parts << URLDecoder.decode(m.group(1), 'UTF-8')
+        while (m.find()) parts << decodeSegment(m.group(1))
         if (parts) return parts.join('/')
         String trimmed = ref.replaceAll('/+$', '')
         return trimmed.contains('/') ? trimmed.substring(trimmed.lastIndexOf('/') + 1) : trimmed
+    }
+
+    @NonCPS
+    static String decodeSegment(String value) {
+        return (value ?: '').replace('%20', ' ').replace('+', ' ')
     }
 
     @NonCPS

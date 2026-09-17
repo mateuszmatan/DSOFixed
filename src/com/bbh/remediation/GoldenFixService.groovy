@@ -10,8 +10,6 @@ import com.bbh.utils.BuildUtils
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
-import java.text.SimpleDateFormat
-
 class GoldenFixService implements Serializable {
 
     static final List<String> DEFAULT_EXCLUDED_DIRS = [
@@ -226,22 +224,22 @@ class GoldenFixService implements Serializable {
 
     @NonCPS
     static List<Map> mergeFixes(List<Map> fixes) {
-        Map byKey = new LinkedHashMap()
+        Map byKey = [:]
         for (Map fix : fixes) {
             Map existing = byKey[fix.key] as Map
             if (!existing) {
-                byKey[fix.key] = new LinkedHashMap(fix)
+                byKey[fix.key] = [:] + fix
             } else if (VersionUtils.isUpgrade(existing.targetVersion as String, fix.targetVersion as String)) {
                 existing.targetVersion   = fix.targetVersion
                 existing.remediationType = fix.remediationType
             }
         }
-        return new ArrayList(byKey.values())
+        return byKey.values().toList()
     }
 
     @NonCPS
     static List<Map> unresolvedFixes(List<Map> fixes, List<Map> changes, List<Map> notes, List<Map> propertyRequests) {
-        Set resolved = new HashSet()
+        List resolved = []
         for (Map c : changes) resolved.addAll(c.componentKeys as List)
         List<Map> out = []
         for (Map fix : fixes) {
@@ -262,18 +260,16 @@ class GoldenFixService implements Serializable {
         return out
     }
 
-    @NonCPS
-    static String timestamp(String timeZone) {
-        SimpleDateFormat format = new SimpleDateFormat('yyyyMMddHHmm')
-        if (timeZone) format.setTimeZone(TimeZone.getTimeZone(timeZone))
-        return format.format(new Date())
+    String timestamp(String timeZone) {
+        String prefix = timeZone ? "TZ='${timeZone}' " : ''
+        return script.sh(returnStdout: true, script: "${prefix}date +%Y%m%d%H%M").trim()
     }
 
     @NonCPS
     static String commitMessage(String title, List<Map> changes, List<Map> scanRefs) {
         StringBuilder sb = new StringBuilder()
-        Set components = new LinkedHashSet()
-        for (Map c : changes) components.add(c.component)
+        List components = []
+        for (Map c : changes) { if (!components.contains(c.component)) components << c.component }
         sb.append("${title}: upgrade ${components.size()} vulnerable direct dependenc${components.size() == 1 ? 'y' : 'ies'}\n\n")
         sb.append("Automated Nexus IQ GoldenFix remediation for application(s): ${scanRefs.collect { it.application }.unique().join(', ')}\n\n")
         for (Map c : changes) {

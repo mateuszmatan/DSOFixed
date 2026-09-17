@@ -281,8 +281,8 @@ abstract class AbstractHtmlReportService implements Serializable {
         return "<div style='background:#dc2626;color:#fff;font-weight:700;text-align:center;padding:8px 12px;border-radius:3px;margin-bottom:8px;font-size:0.85rem;letter-spacing:0.5px;'>${text}</div>"
     }
     @NonCPS protected String badge(String status) {
-        def color = (status == 'PASS' || status == 'NOT_REQUIRED') ? '#16a34a' : (status == 'FAIL' || status == 'OVERRIDE') ? '#dc2626' : (status == 'WARN' || status == 'BLOCKED') ? '#d97706' : '#6b7280'
-        def lbl   = status == 'OVERRIDE' ? 'FAIL' : status == 'NOT_REQUIRED' ? 'NOT REQUIRED' : (status ?: 'SKIP')
+        def color = (status == 'PASS' || status == 'NOT_REQUIRED') ? '#16a34a' : status == 'FAIL' ? '#dc2626' : (status == 'WARN' || status == 'BLOCKED') ? '#d97706' : '#6b7280'
+        def lbl   = status == 'NOT_REQUIRED' ? 'NOT REQUIRED' : (status ?: 'SKIP')
         return "<span style='background:${color};color:#fff;padding:2px 6px;border-radius:3px;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;'>${lbl}</span>"
     }
     @NonCPS protected String vulnCell(int count, int limit) {
@@ -421,7 +421,7 @@ abstract class AbstractHtmlReportService implements Serializable {
         return card(title, sb.toString())
     }
     @NonCPS protected Map testJobGroups(String stageName, Map projectsRemoteTestResults, Map remoteTestResults) {
-        def groups = new LinkedHashMap()
+        def groups = [:]
         (projectsRemoteTestResults ?: [:]).each { p, stages ->
             def l = (stages instanceof Map) ? stages.get(stageName) : null
             if (l instanceof List && !l.isEmpty()) groups[p] = l
@@ -571,7 +571,7 @@ abstract class AbstractHtmlReportService implements Serializable {
         }
         def durHtml = duration ? "<span style='font-size:0.67rem;color:#94a3b8;margin-left:6px;font-weight:400;'>&#9201;&nbsp;${esc(duration)}</span>" : ''
         def html = "<div style='border:1px solid ${palette.border};border-left:3px solid ${palette.bar};background:${palette.bg};padding:7px 10px;'><div style='display:flex;justify-content:space-between;align-items:flex-start;gap:10px;'><div style='min-width:0;flex:1;'><div style='font-weight:600;color:#0f172a;font-size:0.79rem;display:flex;align-items:center;flex-wrap:wrap;gap:0;'>${numHtml}<span style='overflow-wrap:anywhere;word-break:break-word;min-width:0;'>${esc(name)}</span>${durHtml}</div>${detHtml}${linksHtml}</div><div style='flex:0 0 auto;'>${badge(status ?: 'SKIP')}</div></div></div>"
-        if (error && (status == 'FAIL' || status == 'WARN' || status == 'OVERRIDE' || status == 'BLOCKED')) {
+        if (error && (status == 'FAIL' || status == 'WARN' || status == 'BLOCKED')) {
             boolean failed = status == 'FAIL'
             html += "<div style='background:${failed ? '#fef2f2' : '#fffbeb'};border:1px solid ${failed ? '#fca5a5' : '#fcd34d'};border-top:none;border-left:3px solid ${palette.bar};padding:5px 10px 5px 35px;font-size:0.78rem;color:${failed ? BAD_COLOR : '#92400e'};overflow-wrap:anywhere;word-break:break-word;'><strong>Reason:</strong> ${esc(error)}</div>"
         }
@@ -580,7 +580,7 @@ abstract class AbstractHtmlReportService implements Serializable {
     @NonCPS protected Map stageBoxPalette(String status) {
         if (status == 'PASS' || status == 'NOT_REQUIRED') return [bg: OK_BG, border: '#86efac', bar: '#16a34a']
         if (status == 'FAIL') return [bg: '#fef2f2', border: '#fca5a5', bar: '#dc2626']
-        if (status == 'WARN' || status == 'OVERRIDE' || status == 'BLOCKED') return [bg: '#fffbeb', border: '#fcd34d', bar: '#d97706']
+        if (status == 'WARN' || status == 'BLOCKED') return [bg: '#fffbeb', border: '#fcd34d', bar: '#d97706']
         return [bg: '#f8fafc', border: '#e2e8f0', bar: '#94a3b8']
     }
     @NonCPS protected String severityLine(Map counts) {

@@ -5,13 +5,10 @@ import com.bbh.remediation.port.ManifestUpdater
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
-import java.util.regex.Matcher
-import java.util.regex.Pattern
-
 class GradleUpdater implements ManifestUpdater {
 
-    private static final Pattern PROPERTY_REF = Pattern.compile('^\\$\\{?([A-Za-z_][\\w.]*)\\}?$')
-    private static final Pattern TOML_VERSIONS_SECTION = Pattern.compile('(?ms)^\\[versions\\][ \\t]*$(.*?)(?=^\\[|\\z)')
+    private static final String PROPERTY_REF_RE = '^\\$\\{?([A-Za-z_][\\w.]*)\\}?$'
+    private static final String TOML_VERSIONS_RE = '(?ms)(^\\[versions\\][ \\t]*$)((?:.|\\n)*?)(?=^\\[|\\z)'
 
     String ecosystem() { return GoldenFix.MAVEN }
 
@@ -33,24 +30,24 @@ class GradleUpdater implements ManifestUpdater {
         }
 
         String updated = content
-        for (Map fix : fixes) {
-            String g = Pattern.quote(fix.group as String)
-            String a = Pattern.quote(fix.name as String)
-            List<Map> declarations = [
-                    [pattern: Pattern.compile('([\'"])' + g + ':' + a + ':([^\'":@\\s]+)((?::[^\'"@\\s]*)?(?:@[^\'"\\s]*)?)\\1'), group: 2],
-                    [pattern: Pattern.compile('group\\s*[:=]\\s*([\'"])' + g + '\\1\\s*,\\s*name\\s*[:=]\\s*([\'"])' + a + '\\2\\s*,\\s*version\\s*[:=]\\s*([\'"])([^\'"]+)\\3'), group: 4],
-                    [pattern: Pattern.compile('module\\s*=\\s*"' + g + ':' + a + '"\\s*,\\s*version\\s*=\\s*"([^"]+)"'), group: 1]
+        fixes.each { fix ->
+            String group = UpdaterSupport.quote(fix.group as String)
+            String artifact = UpdaterSupport.quote(fix.name as String)
+
+            List declarations = [
+                    '([\'"]' + group + ':' + artifact + ':)([^\'":@\\s]+)((?::[^\'"@\\s]*)?(?:@[^\'"\\s]*)?[\'"])',
+                    '(group\\s*[:=]\\s*[\'"]' + group + '[\'"]\\s*,\\s*name\\s*[:=]\\s*[\'"]' + artifact + '[\'"]\\s*,\\s*version\\s*[:=]\\s*[\'"])([^\'"]+)([\'"])',
+                    '(module\\s*=\\s*"' + group + ':' + artifact + '"\\s*,\\s*version\\s*=\\s*")([^"]+)(")'
             ]
-            for (Map declaration : declarations) {
-                int group = declaration.group as int
-                updated = UpdaterSupport.replaceGroup(updated, declaration.pattern as Pattern, group) { Matcher m ->
-                    return handleDeclaredVersion(relativePath, fix, m.group(group), changes, properties, notes)
+            declarations.each { regex ->
+                updated = UpdaterSupport.replaceValue(updated, regex) { String declared ->
+                    return handleDeclaredVersion(relativePath, fix, declared, changes, properties, notes)
                 }
             }
-            Pattern ref = Pattern.compile('(?:module\\s*=\\s*"' + g + ':' + a + '"|group\\s*=\\s*"' + g + '"\\s*,\\s*name\\s*=\\s*"' + a + '")\\s*,\\s*version\\.ref\\s*=\\s*"([^"]+)"')
-            Matcher rm = ref.matcher(updated)
-            while (rm.find()) {
-                properties << UpdaterSupport.propertyRequest(rm.group(1), fix, relativePath)
+
+            String refRegex = '(?:module\\s*=\\s*"' + group + ':' + artifact + '"|group\\s*=\\s*"' + group + '"\\s*,\\s*name\\s*=\\s*"' + artifact + '")\\s*,\\s*version\\.ref\\s*=\\s*"([^"]+)"'
+            UpdaterSupport.findAll(updated, refRegex, 1).each { reference ->
+                properties << UpdaterSupport.propertyRequest(reference as String, fix, relativePath)
             }
         }
         return [content: updated, changes: changes, properties: properties, notes: notes]
@@ -62,34 +59,28 @@ class GradleUpdater implements ManifestUpdater {
         String fileName = UpdaterSupport.fileName(relativePath)
         String updated = content
 
-        for (Map prop : properties) {
-            String q = Pattern.quote(prop.name as String)
-            String target = prop.targetVersion as String
-            Closure bump = { Matcher m, int group ->
-                String value = m.group(group)
+        properties.each { property ->
+            String name = UpdaterSupport.quote(property.name as String)
+            String target = property.targetVersion as String
+            Closure bump = { String value ->
                 if (!VersionUtils.isConcreteVersion(value) || !VersionUtils.isUpgrade(value, target)) return null
-                changes << UpdaterSupport.propertyChange(relativePath, prop, value)
+                changes << UpdaterSupport.propertyChange(relativePath, property, value)
                 return target
             }
 
             if (fileName == 'gradle.properties') {
-                Pattern p = Pattern.compile('(?m)^[ \\t]*' + q + '[ \\t]*[=:][ \\t]*([^\\s#]+)')
-                updated = UpdaterSupport.replaceGroup(updated, p, 1) { Matcher m -> bump(m, 1) }
+                updated = UpdaterSupport.replaceValue(updated, '(?m)(^[ \\t]*' + name + '[ \\t]*[=:][ \\t]*)([^\\s#]+)', 1, 2, 0, bump)
             } else if (fileName.endsWith('.versions.toml')) {
-                Pattern p = Pattern.compile('(?m)^[ \\t]*"?' + q + '"?[ \\t]*=[ \\t]*"([^"]+)"')
-                updated = UpdaterSupport.replaceGroup(updated, TOML_VERSIONS_SECTION, 1) { Matcher section ->
-                    String original = section.group(1)
-                    String replaced = UpdaterSupport.replaceGroup(original, p, 1) { Matcher m -> bump(m, 1) }
-                    return replaced == original ? null : replaced
+                updated = UpdaterSupport.replaceValue(updated, TOML_VERSIONS_RE, 1, 2, 0) { String section ->
+                    String replaced = UpdaterSupport.replaceValue(section, '(?m)(^[ \\t]*"?' + name + '"?[ \\t]*=[ \\t]*")([^"]+)(")', bump)
+                    return replaced == section ? null : replaced
                 }
             } else {
-                List<Pattern> patterns = [
-                        Pattern.compile('(?<![\\w.])(?:(?:rootProject|project)\\.)?(?:ext(?:ra)?\\.)?' + q + '\\s*=\\s*([\'"])([^\'"\\r\\n]+)\\1'),
-                        Pattern.compile('(?:extra\\[\\s*"' + q + '"\\s*\\]\\s*=|set\\(\\s*[\'"]' + q + '[\'"]\\s*,|' + q + '\\s+by\\s+extra\\()\\s*([\'"])([^\'"\\r\\n]+)\\1')
+                List patterns = [
+                        '(?<![\\w.])((?:(?:rootProject|project)\\.)?(?:ext(?:ra)?\\.)?' + name + '\\s*=\\s*[\'"])([^\'"\\r\\n]+)([\'"])',
+                        '((?:extra\\[\\s*"' + name + '"\\s*\\]\\s*=|set\\(\\s*[\'"]' + name + '[\'"]\\s*,|' + name + '\\s+by\\s+extra\\()\\s*[\'"])([^\'"\\r\\n]+)([\'"])'
                 ]
-                for (Pattern p : patterns) {
-                    updated = UpdaterSupport.replaceGroup(updated, p, 2) { Matcher m -> bump(m, 2) }
-                }
+                patterns.each { regex -> updated = UpdaterSupport.replaceValue(updated, regex, bump) }
             }
         }
         return [content: updated, changes: changes]
@@ -97,9 +88,9 @@ class GradleUpdater implements ManifestUpdater {
 
     @NonCPS
     private static String handleDeclaredVersion(String path, Map fix, String declared, List changes, List properties, List notes) {
-        Matcher pm = PROPERTY_REF.matcher(declared ?: '')
-        if (pm.matches()) {
-            String name = pm.group(1)
+        def reference = (declared ?: '') =~ PROPERTY_REF_RE
+        if (reference) {
+            String name = (reference[0] as List)[1] as String
             if (!name.startsWith('libs.')) {
                 List segments = name.tokenize('.')
                 properties << UpdaterSupport.propertyRequest(segments[segments.size() - 1] as String, fix, path)

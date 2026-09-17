@@ -31,18 +31,28 @@ The library executes the following pipeline automatically when you call `devSecO
 | # | Stage | What it does |
 |---|-------|-------------|
 | 1 | Monitor source changes | Checkout, AppScan setup, IRX generation per project |
-| 2 | Unit tests | Build tool tests + JaCoCo/lcov coverage check |
-| 3 | Dependencies scan (Nexus IQ) | Dependency vulnerability scan with policy enforcement |
-| 4 | SCA (SonarQube) | Static code analysis + quality gate |
-| 5 | SAST – HCL AppScan | Static Application Security Testing, queued per project |
-| 6 | Nexus delivery (static analysis passed) | Publish artifact to Nexus after all static scans pass |
-| 7 | Lower test region deployment | Deploy to RD environment (VM via SSH or OpenShift) |
-| 8 | Smoke tests | Trigger smoke test jobs |
-| 9 | Regression tests | Trigger regression test jobs (>60% coverage required) |
-| 10 | Performance tests | Trigger performance test jobs |
-| 11 | DAST – HCL AppScan | Dynamic Application Security Testing per project |
-| 12 | Nexus delivery (safe artifact) | Publish clean artifact (only when the library security policy is met) |
-| 13 | Higher test environment deployment | Deploy to QC (only when explicitly requested) |
+| 2 | Unit tests | Build tool tests plus JaCoCo/lcov line coverage check |
+| 3 | Dependencies scan (Nexus IQ) | Dependency scan with policy enforcement and an automatic GoldenFix pull request on violation |
+| 4 | SAST – HCL AppScan | Static Application Security Testing, queued per project |
+| 5 | SCA (SonarQube) | Static code analysis and quality gate |
+| 6 | Nexus delivery (static analysis passed) | Publish the snapshot artifact, only when the library security policy is met |
+| 7 | Lower test region deployment | Deploy to RD (VM over SSH or OpenShift) |
+| 8 | Regression tests | Trigger regression jobs, at least one job must be configured |
+| 9 | Smoke tests | Trigger smoke jobs, at least one job must be configured |
+| 10 | Performance tests | Trigger performance jobs, at least one job must be configured |
+| 11 | DAST – HCL AppScan | Dynamic Application Security Testing, HTML and PDF report |
+| 12 | Nexus delivery (safe artifact) | Publish the release artifact, only when everything passed and the library policy is met |
+| 13 | Higher test environment deployment | Deploy to QC, only on request and only when everything passed |
+
+### Which pipeline to use
+
+The library ships three entry points. They share the same services, thresholds, release gate and report.
+
+| Entry point | Runs | Use it when |
+|-------------|------|-------------|
+| `devSecOpsPipeline` | All thirteen stages in one build: unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery, RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment | One job should cover the whole flow |
+| `devSecOpsSecurityPipeline` | Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery, then triggers the extended pipeline | The static part runs on every commit and the rest is a separate job |
+| `devSecOpsExtendedPipeline` | RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment | Downstream of the security pipeline; it inherits the release verdict through `release-gate.json` |
 
 After all stages, the library always:
 - Generates an HTML pipeline report with the stage flow, vulnerability counts, policy status, SonarQube badges and coverage
@@ -181,6 +191,10 @@ The Jenkins controller and build agents must have the following installed and co
 - Flutter SDK (if building Flutter applications)
 - `curl`, `python3`, `ssh`, `scp` (Linux agents)
 - PowerShell (Windows agents)
+
+### Script security
+
+The library runs inside the Jenkins script sandbox and uses no construct that requires an administrator to approve a signature. Collections are built from literals, JSON is read and written with the `readJSON` and `writeJSON` steps, and regular expressions use the Groovy operators. Nothing has to be approved under *Manage Jenkins, In-process Script Approval* to onboard a new project.
 
 ### Jenkins global configuration
 
@@ -557,11 +571,7 @@ Fails when the line coverage is below the project threshold (`coverage.minLine` 
 
 Runs `nexusPolicyEvaluation` with your configured scan patterns and compares the critical, severe and moderate counts with the effective thresholds (`tools.nexusIq.max*`, library default 0). A violation fails the stage and starts the GoldenFix remediation described below.
 
-### Stage 4: SCA (SonarQube)
-
-Runs SonarQube analysis and calls `reportSonarQubeAudit`. Fetches issue counts (Blocker+Critical, Major, Minor, Info) for the HTML report.
-
-### Stage 5: SAST – HCL AppScan
+### Stage 4: SAST – HCL AppScan
 
 Queues all projects for SAST scan simultaneously, then waits for results sequentially. Downloads HTML reports, parses vulnerability counts, and enforces:
 - `sast.maxCritical`, `sast.maxHigh`, `sast.maxMedium`: library default 0, may be raised per project in `config.yaml`
@@ -582,9 +592,13 @@ When the Nexus IQ policy is violated (critical, high or medium findings above th
 
 GoldenFix never changes the result of the Nexus IQ stage: the build still fails on the policy violation, and a GoldenFix error is only reported. Lock files (`package-lock.json`, `poetry.lock`, pinned requirements) are not regenerated. Requires `scm.bitbucket.url` and `scm.bitbucket.credentialsId` and a Linux/macOS agent with git.
 
+### Stage 5: SCA (SonarQube)
+
+Runs SonarQube analysis and calls `reportSonarQubeAudit`. Fetches issue counts (Blocker+Critical, Major, Minor, Info) for the HTML report.
+
 ### Stages 6–10: Delivery and tests
 
-Stage 6 builds the artifact and publishes to Nexus. Stages 7–10 deploy and run tests.
+Stage 6 publishes the snapshot artifact. Stage 7 deploys to RD, then the tests run in the order regression, smoke, performance, followed by DAST. Each test stage needs at least one configured job.
 
 Every test stage runs **all** configured jobs, even when some of them fail, and fails afterwards with a summary. A stage may contain any number of jobs (e.g. 200 smoke tests on different remote Jenkins instances). At most `tests.maxParallel` (default 20, per-stage override `tests.<type>.maxParallel`) jobs run at the same time. Remote jobs can be referenced by full job URL (`url:` or `job: https://...`) without a Remote Jenkins global configuration; `credentialsId` provides user + API token. The HTML report shows per-project counters (total / passed / failed / not configured), the failed jobs, a collapsible list of all jobs and a **Smoke tests** table with a build link for every job.
 
@@ -633,6 +647,8 @@ Exceeding a project threshold, or missing the project coverage minimum, fails th
 - the artifact is **not published to Nexus** (both the snapshot delivery and the release delivery are skipped),
 - the **QC deployment is blocked**,
 - the build is marked UNSTABLE and the HTML report shows a **Release policy** card listing every violation, for example `gui Dependencies (Nexus IQ) critical 1 > 0` or `line coverage 41.0% below the required 60%`.
+
+Any stage that did not pass blocks the release as well. If regression, smoke, performance or DAST fails in the extended pipeline, the artifact is not published to the release repository and the QC deployment stays unavailable.
 
 The gate covers SAST, SCA, Nexus IQ, DAST and line coverage. Low severity findings are not counted. Each pipeline evaluates the results it owns and hands its verdict to the next one through the archived `release-gate.json`, so a security pipeline that exceeded the policy also blocks the release in the extended pipeline.
 

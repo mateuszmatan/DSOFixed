@@ -216,26 +216,6 @@ def call(Map config = [:]) {
                 }
             }
 
-            stage('SCA (SonarQube)') {
-                steps {
-                    script {
-                        dsl.stageStart('SCA (SonarQube)')
-                        def projects = dsl.getProjects()
-                        for (pName in projects) {
-                            dsl.switchProject(pName)
-                            dsl.codeQualityScan()
-                            dsl.sonarscanEnforcePolicy()
-                        }
-                    }
-                }
-                post {
-                    always   { script { dsl.stageDone('SCA (SonarQube)') } }
-                    success  { script { dsl.stagePass('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'PASS') } }
-                    failure  { script { dsl.stageFail('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'WARN') } }
-                }
-            }
-
             stage('SAST - Static Application Security Tests - HCL AppScan') {
                 steps {
                     script {
@@ -266,6 +246,26 @@ def call(Map config = [:]) {
                     success  { script { dsl.stagePass('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'PASS') } }
                     failure  { script { dsl.stageFail('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'FAIL') } }
                     unstable { script { dsl.stageWarn('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'WARN') } }
+                }
+            }
+
+            stage('SCA (SonarQube)') {
+                steps {
+                    script {
+                        dsl.stageStart('SCA (SonarQube)')
+                        def projects = dsl.getProjects()
+                        for (pName in projects) {
+                            dsl.switchProject(pName)
+                            dsl.codeQualityScan()
+                            dsl.sonarscanEnforcePolicy()
+                        }
+                    }
+                }
+                post {
+                    always   { script { dsl.stageDone('SCA (SonarQube)') } }
+                    success  { script { dsl.stagePass('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'PASS') } }
+                    failure  { script { dsl.stageFail('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'FAIL') } }
+                    unstable { script { dsl.stageWarn('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'WARN') } }
                 }
             }
 
