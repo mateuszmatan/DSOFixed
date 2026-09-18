@@ -198,9 +198,9 @@ class FlutterUtils implements Serializable {
                 taskkill /F /IM dart.exe /T
                 if exist "%FLUTTER_CACHE%\\lockfile" del /f /q "%FLUTTER_CACHE%\\lockfile"
             '''
-            deleteDir()
+            steps.deleteDir()
         } catch (e) {
-            print("Mac Exception: $e")
+            steps.echo "CleanUp Windows failed: ${e}"
         }
     }
 
@@ -214,9 +214,9 @@ class FlutterUtils implements Serializable {
                   rm -f "$FLUTTER_CACHE/lockfile"
                fi
             '''
-            deleteDir()
+            steps.deleteDir()
         } catch (e) {
-            print("Mac Exception: $e")
+            steps.echo "CleanUp Mac failed: ${e}"
         }
     }
 }

@@ -102,6 +102,10 @@ class ConfigLoader implements Serializable {
         script.echo "[POLICY] A violation marks the stage unstable, the build continues, the Nexus release and the QC deployment stay blocked."
     }
 
+    private String buildScanName(String base) {
+        return base.replaceAll(/[^a-zA-Z0-9_-]/, '-').replaceAll(/-+/, '-').toLowerCase().trim()
+    }
+
     private Map limits(def cfg) {
         return [
                 maxCritical: (cfg?.maxCritical ?: 0) as int,
