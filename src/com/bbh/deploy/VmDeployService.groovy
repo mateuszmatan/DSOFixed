@@ -69,9 +69,6 @@ class VmDeployService implements Serializable {
 
     void pushToNexus(String projectName) {
         def buildNumber = script.env.BUILD_NUMBER
-        if (state.cfg.buildTool?.trim() == 'gradle') {
-            //TODO add nexus deploy for gradle
-        }
         if (state.cfg.buildTool?.trim() == 'maven') {
             def filePathPattern = state.cfg.build.buildPath
             def file = filePathPattern

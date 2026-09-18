@@ -35,7 +35,7 @@ private void _setup() {
     _build     = new BuildService(this, _state, _os, _policy)
     _appScan   = new AppScanService(this, _state, _os, _policy, _build)
     _sonar     = new SonarService(this, _state, _os, _build)
-    _nexusIq   = new NexusIqService(this, _state, com.bbh.remediation.GoldenFixFactory.create(this, _state))
+    _nexusIq   = new NexusIqService(this, _state, _policy, com.bbh.remediation.GoldenFixFactory.create(this, _state))
     _vmDeploy  = new VmDeployService(this, _state, _os)
     _openshift = new OpenshiftService(this, _state)
     _influx    = new InfluxDbService(this, _state, _os)
@@ -85,9 +85,9 @@ def dastScan() {
 
 def buildArtifact()           { _setup(); _build.buildArtifact() }
 def unitTests()               { _setup(); _build.unitTests() }
-def checkCoverage(int min = 60) {
+def checkCoverage() {
     _setup()
-    _build.checkCoverage(min ?: (_state.coverage?.minRequired ?: 60))
+    _build.checkCoverage()
 }
 def reportArtifactBuild()     { _setup(); _build.reportArtifactBuild() }
 def reportUnitTests()         { _setup(); _build.reportUnitTests() }
@@ -148,6 +148,9 @@ def logStageResult(String stageName, String status) {
     new com.bbh.core.StageLogger(this, _state).logStageResult(stageName, status)
 }
 
+def finishStage(String name) { _setup(); new com.bbh.core.StageLogger(this, _state).finish(name) }
+def failStage(String name)   { _setup(); new com.bbh.core.StageLogger(this, _state).fail(name) }
+
 void setupJavaVersion() {
     env.JAVA_HOME = "/usr/lib/jvm/java-17-openjdk-17.0.19.0.10-2.el9.x86_64"
     env.PATH = "${env.JAVA_HOME}/bin:${env.PATH}"
@@ -203,8 +206,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always { script { dsl.stageDone('Monitor source changes (download sources)') } }
-                    success { script { dsl.stagePass('Monitor source changes (download sources)'); dsl.logStageResult('Monitor source changes (download sources)', 'PASS') } }
-                    failure { script { dsl.stageFail('Monitor source changes (download sources)'); dsl.logStageResult('Monitor source changes (download sources)', 'FAIL') } }
+                    success  { script { dsl.finishStage('Monitor source changes (download sources)') } }
+                    failure  { script { dsl.failStage('Monitor source changes (download sources)') } }
+                    unstable { script { dsl.finishStage('Monitor source changes (download sources)') } }
                 }
             }
 
@@ -235,9 +239,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always { script { dsl.stageDone('SAST - Static Application Security Tests - HCL AppScan') } }
-                    success { script { dsl.stagePass('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'PASS') } }
-                    failure { script { dsl.stageFail('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'WARN') } }
+                    success  { script { dsl.finishStage('SAST - Static Application Security Tests - HCL AppScan') } }
+                    failure  { script { dsl.failStage('SAST - Static Application Security Tests - HCL AppScan') } }
+                    unstable { script { dsl.finishStage('SAST - Static Application Security Tests - HCL AppScan') } }
                 }
             }
         }

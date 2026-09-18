@@ -84,9 +84,10 @@ class BuildService implements Serializable {
         }
     }
 
-    void checkCoverage(int minLine) {
+    void checkCoverage() {
+        int minLine = (state.coverage.minRequired ?: 60) as int
         def tool = detectTool()
-        script.echo "[COVERAGE] Build tool: ${tool}  Minimum: ${minLine}%"
+        script.echo "[COVERAGE] Build tool: ${tool}  Required by the library policy: ${minLine}%"
         Map cov = [line: 0.0, covered: 0, missed: 0, total: 0]
         String covTool = 'none'
         boolean isLCOVCoverage = state.cfg.build.isLCOVCoverage ?: false
@@ -94,8 +95,7 @@ class BuildService implements Serializable {
         if (tool == 'flutter') {
             def lcovPath = 'total_lcov.info'
             if (!script.fileExists(lcovPath)) {
-                script.echo "[COVERAGE] total_lcov.info not found - skipping."
-                state.policyStatus['coverage'] = 'SKIP'
+                policy.missingCoverage('total_lcov.info not found')
                 return
             }
             cov     = readLcov(lcovPath)
@@ -116,8 +116,7 @@ class BuildService implements Serializable {
             }
 
             if (!xmlPaths) {
-                script.echo "[COVERAGE] JaCoCo report not found (tried ${xmlPath}) - skipping. Add coverage.reportPath in config.yaml to specify the exact path."
-                state.policyStatus['coverage'] = 'SKIP'
+                policy.missingCoverage("JaCoCo report not found (tried ${xmlPath}), add coverage.reportPath in config.yaml to point at it")
                 return
             }
 
@@ -144,7 +143,6 @@ class BuildService implements Serializable {
         state.coverage.enabled = true
         state.coverage.tool = covTool
         state.coverage.buildTool  = tool
-        state.coverage.minRequired = minLine
 
         def covLine = state.coverage.line as double
         def marker  = covLine >= (minLine as double) ? '[PASS]' : '[FAIL]'
@@ -152,7 +150,7 @@ class BuildService implements Serializable {
         script.echo "${marker} LINE COVERAGE: ${covLine}%  (min required: ${minLine}%)"
         script.echo "covered=${state.coverage.covered}  missed=${state.coverage.missed}  total=${state.coverage.total}"
         script.echo "----------------------------------------------------"
-        policy.checkCoverage(minLine)
+        policy.checkCoverage()
     }
 
     void reportArtifactBuild() {
@@ -278,10 +276,8 @@ class BuildService implements Serializable {
 
         List<Map> jobs = normalizeTestJobs(testCfg)
         if (!jobs) {
-            def msg = "No test jobs configured in tests.*.jobs - tests are mandatory"
             state.recordTestJobs(stageName, [])
-            state.stageError(stageName, msg)
-            script.error("[${label}] ${msg}")
+            policy.warn(stageName, "${label}: no test jobs configured, at least one job is required in config.yaml. ${PolicyEngine.BLOCK_NOTE}")
             return
         }
 
@@ -323,9 +319,9 @@ class BuildService implements Serializable {
         List failed = resultList.findAll { it.status != 'SUCCESS' }
         if (failed) {
             String details = failedJobsMessage(failed, 10)
-            String prefix  = state.projectsAllCfg.size() > 1 ? "[${state.currentProjectName}] " : ''
-            state.stageError(stageName, prefix + (failed.size() == 1 ? details : "${failed.size()} of ${resultList.size()} job(s) failed: ${details}"))
-            script.error("[${label}] Failed: ${details}")
+            String prefix  = state.projectsAllCfg.size() > 1 ? "${state.currentProjectName}: " : ''
+            String summary2 = failed.size() == 1 ? details : "${failed.size()} of ${resultList.size()} job(s) failed: ${details}"
+            policy.warn(stageName, "${label} failed - ${prefix}${summary2}. ${PolicyEngine.BLOCK_NOTE}")
         }
     }
 

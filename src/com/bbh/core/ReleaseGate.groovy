@@ -5,14 +5,7 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class ReleaseGate implements Serializable {
 
-    static final Map SCANNER_LABELS = [
-            sast: 'SAST (AppScan)',
-            sca : 'SCA (SonarQube)',
-            niq : 'Dependencies (Nexus IQ)',
-            dast: 'DAST (AppScan)'
-    ]
-
-    static final List BLOCKING_STAGE_STATUSES = ['FAIL', 'BLOCKED']
+    static final List GREEN_STATUSES = ['PASS', 'NOT_REQUIRED', 'SKIP']
 
     private final def           script
     private final PipelineState state
@@ -38,8 +31,8 @@ class ReleaseGate implements Serializable {
         Map coverage = BuildUtils.booleanValue(gateCfg.requireCoverage, true) ? ([:] + (state.coverage ?: [:])) : [:]
         List carried = []
         carried.addAll(upstreamViolations())
-        carried.addAll(failedStageViolations())
-        return decide(state.projectsVulnCounts ?: [:], state.hardLimits ?: [:], scanners, coverage, carried)
+        carried.addAll(stageViolations())
+        return decide(state.projectsVulnCounts ?: [:], state.policyLimits ?: [:], scanners, coverage, carried)
     }
 
     void publish() {
@@ -67,11 +60,11 @@ class ReleaseGate implements Serializable {
         }
     }
 
-    List failedStageViolations() {
+    List stageViolations() {
         List out = []
         (state.stageResults ?: [:]).each { name, status ->
-            if (BLOCKING_STAGE_STATUSES.contains(status as String)) {
-                out << "stage '${name}' did not pass (${status})".toString()
+            if (!GREEN_STATUSES.contains(status as String)) {
+                out << "stage '${name}' is ${status}".toString()
             }
         }
         return out
@@ -82,7 +75,7 @@ class ReleaseGate implements Serializable {
     }
 
     @NonCPS
-    static Map decide(Map projectsVulnCounts, Map hardLimits, List scanners, Map coverage, List carriedViolations) {
+    static Map decide(Map projectsVulnCounts, Map policyLimits, List scanners, Map coverage, List carriedViolations) {
         List violations = []
         violations.addAll(carriedViolations ?: [])
 
@@ -90,8 +83,8 @@ class ReleaseGate implements Serializable {
             (scanners ?: []).each { scanner ->
                 Map counts = ((byScanner ?: [:]) as Map).get(scanner) as Map
                 if (counts != null) {
-                    Map limits = ((hardLimits ?: [:]).get(scanner) ?: [:]) as Map
-                    String label = (SCANNER_LABELS[scanner] ?: scanner) as String
+                    Map limits = ((policyLimits ?: [:]).get(scanner) ?: [:]) as Map
+                    String label = (PolicyEngine.SCANNER_LABELS[scanner] ?: scanner) as String
                     violations.addAll(severityViolations(project as String, label, counts, limits))
                 }
             }
@@ -99,18 +92,18 @@ class ReleaseGate implements Serializable {
 
         if (coverage && coverage.get('enabled')) {
             double line = (coverage.get('line') ?: 0.0) as double
-            double required = (coverage.get('minRequiredHard') ?: 60) as double
+            double required = (coverage.get('minRequired') ?: 60) as double
             if (line < required) {
                 violations << "line coverage ${line}% below the required ${required as int}%".toString()
             }
         }
 
         boolean allowed = violations.isEmpty()
-        String reason = allowed ? '' : ('Nexus release and QC deployment blocked - the library security policy is not met: ' + violations.join(' | '))
+        String reason = allowed ? '' : ('Nexus release and QC deployment blocked: ' + violations.unique().join(' | '))
         String log = allowed
-                ? '[RELEASE-GATE] Library security policy met - Nexus release and QC deployment allowed'
+                ? '[RELEASE-GATE] Every stage is green - Nexus release and QC deployment allowed'
                 : "[RELEASE-GATE] ${reason}".toString()
-        return [allowed: allowed, violations: violations, reason: reason, log: log]
+        return [allowed: allowed, violations: violations.unique(), reason: reason, log: log]
     }
 
     @NonCPS

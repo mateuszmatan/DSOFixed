@@ -3,7 +3,7 @@ defaults:
   deployTarget: vm
   sourceDir:    "."
   coverage:
-    minLine: 60
+    minLine: 60                      # required line coverage, projects cannot override it
 
   tools:
     sonar:
@@ -19,7 +19,6 @@ defaults:
     maxCritical:       0
     maxHigh:           0
     maxMedium:         0
-    warnOnly:          false
     prepareTimeoutMin: 120
     pollTimeoutMin:    50
     pollIntervalSec:   30
@@ -29,7 +28,6 @@ defaults:
     maxCritical:     0
     maxHigh:         0
     maxMedium:       0
-    warnOnly:        false
     pollTimeoutMin:  40
     pollIntervalSec: 30
 
@@ -37,14 +35,13 @@ defaults:
     maxCritical:     0
     maxHigh:         0
     maxMedium:       0
-    warnOnly:        false
     pollTimeoutMin:  60
     pollIntervalSec: 60
 
   tests:
     maxParallel: 20                # max test jobs (smoke/regression/performance) running at the same time
 
-  releaseGate:                     # blocks the Nexus release and the QC deployment when these limits are exceeded
+  releaseGate:                     # a stage that breaks the policy above turns orange and blocks these two stages
     scanners:        [sast, sca, niq, dast]
     requireCoverage: true          # line coverage must reach coverage.minLine of this file
     stateFile:       release-gate.json

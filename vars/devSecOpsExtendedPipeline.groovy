@@ -34,7 +34,7 @@ private void _setup() {
     _build     = new BuildService(this, _state, _os, _policy)
     _appScan   = new AppScanService(this, _state, _os, _policy, _build)
     _sonar     = new SonarService(this, _state, _os, _build)
-    _nexusIq   = new NexusIqService(this, _state)
+    _nexusIq   = new NexusIqService(this, _state, _policy)
     _vmDeploy  = new VmDeployService(this, _state, _os)
     _openshift = new OpenshiftService(this, _state)
     _influx    = new InfluxDbService(this, _state, _os)
@@ -60,9 +60,9 @@ def dastScan() {
 
 def buildArtifact()           { _setup(); _build.buildArtifact() }
 def unitTests()               { _setup(); _build.unitTests() }
-def checkCoverage(int min = 60) {
+def checkCoverage() {
     _setup()
-    _build.checkCoverage(min ?: (_state.coverage?.minRequired ?: 60))
+    _build.checkCoverage()
 }
 def reportArtifactBuild()     { _setup(); _build.reportArtifactBuild() }
 def reportUnitTests()         { _setup(); _build.reportUnitTests() }
@@ -119,6 +119,9 @@ def logStageResult(String stageName, String status) {
     _setup()
     new com.bbh.core.StageLogger(this, _state).logStageResult(stageName, status)
 }
+
+def finishStage(String name) { _setup(); new com.bbh.core.StageLogger(this, _state).finish(name) }
+def failStage(String name)   { _setup(); new com.bbh.core.StageLogger(this, _state).fail(name) }
 
 def section(String text)      { _setup(); new com.bbh.core.StageLogger(this, _state).section(text) }
 def startSection(String text) { _setup(); new com.bbh.core.StageLogger(this, _state).startSection(text) }
@@ -185,8 +188,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always   { script { dsl.stageDone('Monitor source changes (download sources)') } }
-                    success  { script { dsl.stagePass('Monitor source changes (download sources)'); dsl.logStageResult('Monitor source changes (download sources)', 'PASS') } }
-                    failure  { script { dsl.stageFail('Monitor source changes (download sources)'); dsl.logStageResult('Monitor source changes (download sources)', 'FAIL') } }
+                    success  { script { dsl.finishStage('Monitor source changes (download sources)') } }
+                    failure  { script { dsl.failStage('Monitor source changes (download sources)') } }
+                    unstable { script { dsl.finishStage('Monitor source changes (download sources)') } }
                 }
             }
 
@@ -208,8 +212,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always  { script { dsl.stageDone('Lower test region deployment') } }
-                    success { script { dsl.stagePass('Lower test region deployment'); dsl.logStageResult('Lower test region deployment', 'PASS') } }
-                    failure { script { dsl.stageFail('Lower test region deployment'); dsl.logStageResult('Lower test region deployment', 'FAIL') } }
+                    success  { script { dsl.finishStage('Lower test region deployment') } }
+                    failure  { script { dsl.failStage('Lower test region deployment') } }
+                    unstable { script { dsl.finishStage('Lower test region deployment') } }
                 }
             }
 
@@ -226,8 +231,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always  { script { dsl.stageDone('Regression tests (>60% user stories coverage)') } }
-                    success { script { dsl.stagePass('Regression tests (>60% user stories coverage)'); dsl.logStageResult('Regression tests (>60% user stories coverage)', 'PASS') } }
-                    failure { script { dsl.stageFail('Regression tests (>60% user stories coverage)'); dsl.logStageResult('Regression tests (>60% user stories coverage)', 'FAIL') } }
+                    success  { script { dsl.finishStage('Regression tests (>60% user stories coverage)') } }
+                    failure  { script { dsl.failStage('Regression tests (>60% user stories coverage)') } }
+                    unstable { script { dsl.finishStage('Regression tests (>60% user stories coverage)') } }
                 }
             }
 
@@ -244,8 +250,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always  { script { dsl.stageDone('Smoke tests') } }
-                    success { script { dsl.stagePass('Smoke tests'); dsl.logStageResult('Smoke tests', 'PASS') } }
-                    failure { script { dsl.stageFail('Smoke tests'); dsl.logStageResult('Smoke tests', 'FAIL') } }
+                    success  { script { dsl.finishStage('Smoke tests') } }
+                    failure  { script { dsl.failStage('Smoke tests') } }
+                    unstable { script { dsl.finishStage('Smoke tests') } }
                 }
             }
 
@@ -262,8 +269,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always  { script { dsl.stageDone('Performance tests') } }
-                    success { script { dsl.stagePass('Performance tests'); dsl.logStageResult('Performance tests', 'PASS') } }
-                    failure { script { dsl.stageFail('Performance tests'); dsl.logStageResult('Performance tests', 'FAIL') } }
+                    success  { script { dsl.finishStage('Performance tests') } }
+                    failure  { script { dsl.failStage('Performance tests') } }
+                    unstable { script { dsl.finishStage('Performance tests') } }
                 }
             }
 
@@ -281,9 +289,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always   { script { dsl.stageDone('DAST - Dynamic Application Security Tests - HCL AppScan') } }
-                    success  { script { dsl.stagePass('DAST - Dynamic Application Security Tests - HCL AppScan'); dsl.logStageResult('DAST - Dynamic Application Security Tests - HCL AppScan', 'PASS') } }
-                    failure  { script { dsl.stageFail('DAST - Dynamic Application Security Tests - HCL AppScan'); dsl.logStageResult('DAST - Dynamic Application Security Tests - HCL AppScan', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('DAST - Dynamic Application Security Tests - HCL AppScan'); dsl.logStageResult('DAST - Dynamic Application Security Tests - HCL AppScan', 'WARN') } }
+                    success  { script { dsl.finishStage('DAST - Dynamic Application Security Tests - HCL AppScan') } }
+                    failure  { script { dsl.failStage('DAST - Dynamic Application Security Tests - HCL AppScan') } }
+                    unstable { script { dsl.finishStage('DAST - Dynamic Application Security Tests - HCL AppScan') } }
                 }
             }
 
@@ -301,8 +309,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always  { script { dsl.stageDone('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities') } }
-                    success { script { dsl.stagePass('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities'); dsl.logStageResult('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities', 'PASS') } }
-                    failure { script { dsl.stageFail('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities'); dsl.logStageResult('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities', 'FAIL') } }
+                    success  { script { dsl.finishStage('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities') } }
+                    failure  { script { dsl.failStage('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities') } }
+                    unstable { script { dsl.finishStage('Nexus delivery - Safe Artifact - 0 known Security Vulnerabilities') } }
                 }
             }
 
@@ -324,8 +333,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always  { script { dsl.stageDone('Higher test environment deployment') } }
-                    success { script { dsl.stagePass('Higher test environment deployment'); dsl.logStageResult('Higher test environment deployment', 'PASS') } }
-                    failure { script { dsl.stageFail('Higher test environment deployment'); dsl.logStageResult('Higher test environment deployment', 'FAIL') } }
+                    success  { script { dsl.finishStage('Higher test environment deployment') } }
+                    failure  { script { dsl.failStage('Higher test environment deployment') } }
+                    unstable { script { dsl.finishStage('Higher test environment deployment') } }
                 }
             }
         }

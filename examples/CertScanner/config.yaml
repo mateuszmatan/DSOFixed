@@ -1,12 +1,16 @@
 projects:
 
   gui:
-    appId:     "209f44ac-dd06-4ca0-884e-d944904f8020"
-    buildTool: gradle
+    appId:        "209f44ac-dd06-4ca0-884e-d944904f8020"
+    buildTool:    gradle
+    deployTarget: vm
+    sourceDir:    "."
 
     asoc:
-      url:       "https://bbh.cloud.appscan.com"
-      keyId:     "bbh_b81fbc9f-39c1-8eb4-38b5-b702268969b9"
+      url:         "https://bbh.cloud.appscan.com"
+      keyId:       "bbh_b81fbc9f-39c1-8eb4-38b5-b702268969b9"
+      keySecret:   "O4c95brMewp/vB034oSGJF3WpgNHnWjqJPswFtjliN+4"
+      insecureTls: false
 
     influx:
       enabled: true
@@ -15,25 +19,19 @@ projects:
       url:     "http://qcwsecopsmon1.testbbh.com:8086/api/v2/write?org=DevSecOps&bucket=DORA-metrics&precision=s"
       token:   "3m5H2lOEyUiUQLrDi1DT2Ws2GatOW9lhVPez9kbWqDoWJP8o07meyl3XXbeI-GWZayZrw93h_DPfjNu_CrLBiQ=="
 
-    coverage:
-      minLine: 60
-
-    sast:
-      maxCritical: 0
-      maxHigh:     0
-      maxMedium:   0
-
-    sca:
-      maxCritical: 0
-      maxHigh:     0
-      maxMedium:   0
-
     tools:
       sonar:
-        projectName: "CertScanner-GUI"
-        projectKey:  "cert-scanner-gui"
-        serverUrl:   "https://tools.bbh.com/sonar"
-        badgeToken:  "sqb_95b6b9cfb2fe8f3fa0e45261ece1856d3fb1ebc"
+        projectName:      "CertScanner-GUI"
+        projectKey:       "cert-scanner-gui"
+        serverUrl:        "https://tools.bbh.com/sonar"
+        credentialsId:    "sonarqube-token"
+        installationName: "SonarQube"
+        authToken:        "sonarqube-token"
+        badgeToken:       "sqb_95b6b9cfb2fe8f3fa0e45261ece1856d3fb1ebc"
+        addBadges:        true
+        fullBadges:       true
+        gradle:
+          tasks: ['sonarqube']
       nexusIq:
         application:        "CertValidityMonitoring-GUI"
         serverUrl:          "https://tools.bbh.com/IQ"
@@ -41,14 +39,23 @@ projects:
         scanPatterns:       ["**/gui/build/libs/*.jar"]
         stage:              "build"
         failOnNetworkError: false
-        maxCritical:        0
-        maxHigh:            0
-        maxMedium:          0
+
+    sast:
+      scanName: "CertScanner-GUI-SAST"
+
+    sca:
+      scanName: "CertScanner-GUI-SCA"
 
     dast:
       enabled:    true
+      scanName:   "CertScanner-GUI-DAST"
       targetUrl:  "http://rdltaapps1.testbbh.com"
       presenceId: ""
+
+    build:
+      gradle:
+        tasks: ['clean','build','bootJar']
+        flags: ['--refresh-dependencies']
 
     scm:
       bitbucket:
@@ -62,11 +69,21 @@ projects:
       enabled: true
 
     tests:
+      unitTests:
+        gradle:
+          tasks: ['test','jacocoTestReport','jacocoTestCoverageVerification']
+        unitTestResult: 'build/test-results/test/*.xml'
       regression:
+        maxParallel: 5
         jobs:
           - name:       "CertScanner-GUI - regression"
             type:       local
             job:        "cert-scanner/regression-tests"
+            timeoutMin: 60
+          - name:       "CertScanner-GUI - regression (certificates)"
+            type:       local
+            job:        "cert-scanner/regression-certificates"
+            parameters: "ENV=rd"
             timeoutMin: 60
       smoke:
         maxParallel: 20
@@ -79,10 +96,15 @@ projects:
             url:  "https://jenkins-a.bbh.com/job/smoke/job/cert-scanner-login"
           - name: "CertScanner-GUI - certificate list smoke"
             url:  "https://jenkins-a.bbh.com/job/smoke/job/cert-scanner-list"
+          - name:          "CertScanner-GUI - notification smoke"
+            job:           "smoke/cert-scanner-notifications"
+            remoteJenkins: "jenkins-b"
+            parameters:    "ENV=rd"
           - name:       "CertScanner-GUI - local smoke"
             type:       local
             job:        "cert-scanner/smoke-tests"
             timeoutMin: 15
+          - "https://jenkins-c.bbh.com/job/smoke/job/cert-scanner-dashboard"
         urls:
           - "https://jenkins-b.bbh.com/job/smoke/job/cert-scanner-expiry"
       performance:
@@ -106,25 +128,12 @@ projects:
           deployDir:    "/opt/ta/CertScanner/gui/deployment"
           deployScript: "scripts/deployment/zero-downtime-deployment.sh"
           versionFile:  "scripts/deployment/version.properties"
-      openshift:
-        rd:
-          appName:           "certscanner-gui-rd"
-          projectDeployment: "ta-certscanner-rd"
-          cluster:           "https://api.ocp-rd.testbbh.com:6443"
-          credentialsId:     "openshift-rd-token"
-          imageRegistry:     "image-registry.apps.ocp-rd.testbbh.com"
-          imageNamespace:    "ta-certscanner-rd"
-        qc:
-          appName:           "certscanner-gui-qc"
-          projectDeployment: "ta-certscanner-qc"
-          cluster:           "https://api.ocp-qc.testbbh.com:6443"
-          credentialsId:     "openshift-qc-token"
-          imageRegistry:     "image-registry.apps.ocp-qc.testbbh.com"
-          imageNamespace:    "ta-certscanner-qc"
 
   backend-api:
-    appId:     "209f44ac-dd06-4ca0-884e-d944904f8021"
-    buildTool: gradle
+    appId:        "209f44ac-dd06-4ca0-884e-d944904f8021"
+    buildTool:    maven
+    deployTarget: openshift
+    sourceDir:    "."
 
     asoc:
       url:       "https://bbh.cloud.appscan.com"
@@ -138,37 +147,59 @@ projects:
       url:     "http://qcwsecopsmon1.testbbh.com:8086/api/v2/write?org=DevSecOps&bucket=DORA-metrics&precision=s"
       token:   "3m5H2lOEyUiUQLrDi1DT2Ws2GatOW9lhVPez9kbWqDoWJP8o07meyl3XXbeI-GWZayZrw93h_DPfjNu_CrLBiQ=="
 
-    coverage:
-      minLine: 45
-
-    sast:
-      maxCritical: 0
-      maxHigh:     2
-      maxMedium:   5
-
     tools:
       sonar:
-        projectName: "CertScanner-Backend"
-        projectKey:  "cert-scanner-backend"
-        serverUrl:   "https://tools.bbh.com/sonar"
-        badgeToken:  "sqb_95b6b9cfb2fe8f3fa0e45261ece1856d3fb1ebc"
+        projectName:      "CertScanner-Backend"
+        projectKey:       "cert-scanner-backend"
+        serverUrl:        "https://tools.bbh.com/sonar"
+        installationName: "SonarQube"
+        authToken:        "sonarqube-token"
+        badgeToken:       "sqb_95b6b9cfb2fe8f3fa0e45261ece1856d3fb1ebc"
+        addBadges:        true
+        maven:
+          goals: ['sonar:sonar']
       nexusIq:
         application:        "CertValidityMonitoring-Backend"
         serverUrl:          "https://tools.bbh.com/IQ"
         credentialsId:      "nexusiqP"
-        scanPatterns:       ["**/api/build/libs/*.jar"]
+        scanPatterns:       ["**/api/target/*.jar"]
         stage:              "build"
         failOnNetworkError: false
 
+    sast:
+      scanName: "CertScanner-Backend-SAST"
+
+    sca:
+      scanName: "CertScanner-Backend-SCA"
+
     dast:
-      enabled: false
+      enabled:    true
+      scanName:   "CertScanner-Backend-DAST"
+      targetUrl:  "http://rdltaapps1.testbbh.com:8080/api"
+      presenceId: ""
+
+    build:
+      maven:
+        javaPath: /usr/lib/jvm/java-17-openjdk
+        goals:    ['clean','verify']
+        flags:    ['-B','-U']
+        env:
+          MAVEN_OPTS: "-Xms512m -Xmx1g"
 
     scm:
       bitbucket:
         url:           "https://bitbucket.bbh.com/projects/TA/repos/cert-scanner"
         credentialsId: "bitbucket-http-credentials"
+        authType:      basic
+
+    goldenFix:
+      enabled: true
 
     tests:
+      unitTests:
+        maven:
+          goals: ['test','jacoco:report']
+        unitTestResult: 'target/surefire-reports/*.xml'
       regression:
         jobs:
           - name:       "CertScanner-Backend - regression"
@@ -181,6 +212,9 @@ projects:
             type:       local
             job:        "cert-scanner/api-smoke-tests"
             timeoutMin: 15
+          - name: "CertScanner-Backend - contract smoke"
+            url:  "https://jenkins-a.bbh.com/job/smoke/job/cert-scanner-api-contract"
+            credentialsId: "remote-jenkins-api-token"
       performance:
         jobs:
           - name:       "CertScanner-Backend - performance"
@@ -189,19 +223,6 @@ projects:
             timeoutMin: 120
 
     deploy:
-      vm:
-        rd:
-          host:         "rdltaapps1.testbbh.com"
-          user:         "taadmin"
-          deployDir:    "/opt/ta/CertScanner/api/deployment"
-          deployScript: "scripts/deployment/zero-downtime-deployment.sh"
-          versionFile:  "scripts/deployment/version.properties"
-        qc:
-          host:         "qcltaapps1.testbbh.com"
-          user:         "taadmin"
-          deployDir:    "/opt/ta/CertScanner/api/deployment"
-          deployScript: "scripts/deployment/zero-downtime-deployment.sh"
-          versionFile:  "scripts/deployment/version.properties"
       openshift:
         rd:
           appName:           "certscanner-api-rd"

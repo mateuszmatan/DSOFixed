@@ -4,8 +4,6 @@ import com.bbh.core.PipelineState
 
 class ConfigLoader implements Serializable {
 
-    private static final List<String> OVERRIDABLE = ['sast', 'sca', 'niq', 'coverage']
-
     private final def           script
     private final PipelineState state
 
@@ -45,16 +43,15 @@ class ConfigLoader implements Serializable {
             state.currentProjectName = primaryName
             script.env.CURRENT_PROJECT_NAME = primaryName
             script.echo "[INIT] Projects: ${projectNames.join(', ')} | primary: ${primaryName} | buildTool: ${state.cfg.buildTool ?: 'gradle'}"
-            def scanName = buildScanName(state.cfg.tools?.sonar?.projectName ?: primaryName)
-            script.env.APPSCAN_SCAN_NAME = scanName
-            script.echo "[INIT] APPSCAN_SCAN_NAME=${scanName}"
+            script.env.APPSCAN_SCAN_NAME = buildScanName(state.cfg.tools?.sonar?.projectName ?: primaryName)
+            script.echo "[INIT] APPSCAN_SCAN_NAME=${script.env.APPSCAN_SCAN_NAME}"
         }
 
         def keyId = state.cfg.asoc?.keyId?.trim()
         if (!keyId) script.error "[INIT] asoc.keyId must be set in config.yaml"
         script.env.APPSCAN_KEY_ID = keyId
 
-        applyPolicyLimits()
+        applyPolicy()
         script.echo "[INIT] OS: ${script.env.OS_TYPE ?: 'linux'}"
     }
 
@@ -82,57 +79,27 @@ class ConfigLoader implements Serializable {
         state.currentProjectName = projectName
         script.env.CURRENT_PROJECT_NAME = projectName
         script.env.APPSCAN_SCAN_NAME = buildScanName(state.cfg.tools?.sonar?.projectName ?: projectName)
-        applyPolicyLimits()
     }
 
-    private String buildScanName(String base) {
-        return base.replaceAll(/[^a-zA-Z0-9_-]/, '-').replaceAll(/-+/, '-').toLowerCase().trim()
-    }
-
-    void applyPolicyLimits() {
-        state.hardLimits = [
+    void applyPolicy() {
+        state.policyLimits = [
                 sast: limits(state.cfgDefaults.sast),
                 sca : limits(state.cfgDefaults.sca),
                 dast: limits(state.cfgDefaults.dast),
                 niq : limits(state.cfgDefaults.tools?.nexusIq)
         ]
-        state.policyLimits = [
-                sast: limits(state.cfg.sast),
-                sca : limits(state.cfg.sca),
-                dast: state.hardLimits.dast,
-                niq : limits(state.cfg.tools?.nexusIq)
-        ]
-        state.projectsPolicyLimits[state.currentProjectName] = state.policyLimits
-
-        int hardCoverage = (state.cfgDefaults.coverage?.minLine ?: 60) as int
-        state.coverage.minRequiredHard = hardCoverage
-        state.coverage.minRequired = (state.cfg.coverage?.minLine ?: hardCoverage) as int
-
-        logPolicyLimits()
+        state.coverage.minRequired = (state.cfgDefaults.coverage?.minLine ?: 60) as int
+        logPolicy()
     }
 
-    private void logPolicyLimits() {
-        script.echo "[POLICY] Project '${state.currentProjectName}' thresholds (pipeline fails above them):"
-        ['sast', 'sca', 'niq'].each { key ->
-            def effective = state.policyLimits[key] ?: [:]
-            def hard = state.hardLimits[key] ?: [:]
-            String overridden = effective == hard ? '' : "  (library policy: C<=${hard.maxCritical} H<=${hard.maxHigh} M<=${hard.maxMedium})"
-            script.echo "[POLICY]   ${key.toUpperCase()}: C<=${effective.maxCritical} H<=${effective.maxHigh} M<=${effective.maxMedium}${overridden}"
+    private void logPolicy() {
+        script.echo "[POLICY] Library security policy (resources/defaults.yaml), projects cannot change it:"
+        ['sast', 'sca', 'niq', 'dast'].each { key ->
+            def limit = state.policyLimits[key] ?: [:]
+            script.echo "[POLICY]   ${key.toUpperCase()}: critical<=${limit.maxCritical} high<=${limit.maxHigh} medium<=${limit.maxMedium}"
         }
-        def dast = state.hardLimits.dast ?: [:]
-        script.echo "[POLICY]   DAST: C<=${dast.maxCritical} H<=${dast.maxHigh} M<=${dast.maxMedium}  (not overridable)"
-        String coverageNote = state.coverage.minRequired == state.coverage.minRequiredHard ? '' : "  (library policy: ${state.coverage.minRequiredHard}%)"
-        script.echo "[POLICY]   Coverage: min ${state.coverage.minRequired}%${coverageNote}"
-        if (hasOverrides()) {
-            script.echo "[POLICY] Project thresholds are relaxed - the artifact is not released to Nexus and QC deployment is blocked while the library policy is exceeded"
-        }
-    }
-
-    boolean hasOverrides() {
-        for (String key : ['sast', 'sca', 'niq']) {
-            if (state.policyLimits[key] != state.hardLimits[key]) return true
-        }
-        return state.coverage.minRequired != state.coverage.minRequiredHard
+        script.echo "[POLICY]   Coverage: line coverage >= ${state.coverage.minRequired}%"
+        script.echo "[POLICY] A violation marks the stage unstable, the build continues, the Nexus release and the QC deployment stay blocked."
     }
 
     private Map limits(def cfg) {

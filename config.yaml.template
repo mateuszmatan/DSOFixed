@@ -1,16 +1,16 @@
 projects:
 
   gui:
-    appId:       "109f44ac-cc06-4ca0-884e-d944904f7019"
-    buildTool:   gradle
+    appId:        "109f44ac-cc06-4ca0-884e-d944904f7019"
+    buildTool:    gradle
     deployTarget: vm
-    coverage:
-      minLine: 60
+    sourceDir:    "."
 
     asoc:
-      url:       "https://bbh.cloud.appscan.com"
-      keyId:     "bbh_b81fbc9f-39c1-8eb4-38b5-b702268969b9"
-      keySecret: "your-secret"
+      url:         "https://bbh.cloud.appscan.com"
+      keyId:       "bbh_b81fbc9f-39c1-8eb4-38b5-b702268969b9"
+      keySecret:   "your-secret"
+      insecureTls: false                 # true adds curl -k to the ASoC calls, keep false
 
     influx:
       enabled:  true
@@ -34,16 +34,10 @@ projects:
         failOnNetworkError: false
 
     sast:
-      scanName: "MyApp-GUI-SAST"
-      maxCritical: 0                       # project threshold - the pipeline fails above it
-      maxHigh:     0                       # above the library policy the build still reaches RD,
-      maxMedium:   0                       # but it is not released to Nexus and cannot go to QC
+      scanName: "MyApp-GUI-SAST"         # thresholds live in the library defaults.yaml only
 
     sca:
       scanName: "MyApp-GUI-SCA"
-      maxCritical: 0
-      maxHigh:     0
-      maxMedium:   0
 
     dast:
       enabled:       true

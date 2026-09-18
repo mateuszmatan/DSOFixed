@@ -25,20 +25,11 @@ class PipelineState implements Serializable {
         niq:  [maxCritical: 0, maxHigh: 0, maxMedium: 0]
     ]
 
-    Map hardLimits = [
-        sast: [maxCritical: 0, maxHigh: 0, maxMedium: 0],
-        sca:  [maxCritical: 0, maxHigh: 0, maxMedium: 0],
-        dast: [maxCritical: 0, maxHigh: 0, maxMedium: 0],
-        niq:  [maxCritical: 0, maxHigh: 0, maxMedium: 0]
-    ]
-
-    Map projectsPolicyLimits = [:]
-
     Map policyStatus = [sast: 'SKIP', sca: 'SKIP', dast: 'SKIP', iast: 'SKIP', coverage: 'SKIP', sonar: 'SKIP']
 
     Map coverage = [
         enabled: false, tool: 'none', buildTool: 'none',
-        line: 0.0, covered: 0, missed: 0, total: 0, minRequired: 60, minRequiredHard: 60
+        line: 0.0, covered: 0, missed: 0, total: 0, minRequired: 60
     ]
 
     Map projectsVulnCounts     = [:]
@@ -54,11 +45,17 @@ class PipelineState implements Serializable {
     Map projectsGoldenFix         = [:]
     Map goldenFixPullRequest      = [:]
 
+    static final List KEPT_STATUSES = ['NOT_REQUIRED', 'BLOCKED', 'WARN', 'FAIL']
+
     void stagePass(String name) {
-        if (stageResults[name] != 'NOT_REQUIRED' && stageResults[name] != 'BLOCKED') {
+        if (!KEPT_STATUSES.contains(stageResults[name] as String)) {
             stageResults[name] = 'PASS'
             stageErrors.remove(name)
         }
+    }
+
+    String stageStatus(String name) {
+        return (stageResults[name] ?: 'SKIP') as String
     }
 
     void stageFail(String name)                 { stageResults[name] = 'FAIL' }

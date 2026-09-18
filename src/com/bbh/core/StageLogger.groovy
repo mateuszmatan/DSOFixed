@@ -13,6 +13,16 @@ class StageLogger implements Serializable {
         this.state  = state
     }
 
+    void finish(String stageName) {
+        state.stagePass(stageName)
+        logStageResult(stageName, state.stageStatus(stageName))
+    }
+
+    void fail(String stageName) {
+        state.stageFail(stageName)
+        logStageResult(stageName, 'FAIL')
+    }
+
     void logStageResult(String stageName, String status) {
         script.echo BAR
         script.echo "[STAGE]  ${stageName}"

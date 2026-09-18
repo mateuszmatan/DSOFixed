@@ -1,16 +1,22 @@
 package com.bbh.scanner
 
 import com.bbh.core.PipelineState
+import com.bbh.core.PolicyEngine
 import com.bbh.remediation.GoldenFixService
 
 class NexusIqService implements Serializable {
+
+    static final String NIQ_STAGE = 'Dependencies scan (Nexus IQ)'
+
     private final def         script
     private final PipelineState state
+    private final PolicyEngine policy
     private final GoldenFixService goldenFix
 
-    NexusIqService(def script, PipelineState state, GoldenFixService goldenFix = null) {
+    NexusIqService(def script, PipelineState state, PolicyEngine policy, GoldenFixService goldenFix = null) {
         this.script    = script
         this.state     = state
+        this.policy    = policy
         this.goldenFix = goldenFix
     }
 
@@ -18,7 +24,6 @@ class NexusIqService implements Serializable {
         def niqCfg       = state.cfg.tools?.nexusIq ?: [:]
         Map<String, Map> apps = normalize(niqCfg) as Map<String, Map>
 
-        def policyViolated = false
         def violMsg        = ''
         List<Map> scanRefs = []
         try {
@@ -86,22 +91,20 @@ class NexusIqService implements Serializable {
             def lh = (state.policyLimits.get('niq')?.maxHigh     ?: 0) as int
             def lm = (state.policyLimits.get('niq')?.maxMedium   ?: 0) as int
 
-            def countViolation  = (c > lc || h > lh || m > lm)
+            List violations = policy.countViolations([critical: c, high: h, medium: m], [maxCritical: lc, maxHigh: lh, maxMedium: lm])
 
-            if (countViolation) {
-                violMsg = "Policy violated: C:${c}/${lc}  H:${h}/${lh}  M:${m}/${lm}"
-                def r = 'FAIL'
-                state.nexusIqResults['status'] = r
-                state.policyStatus['iast']     = r
-                state.recordNexusIq(r)
-                state.recordScan('niq', r)
+            if (violations) {
+                violMsg = "Dependencies (Nexus IQ) policy not met: ${violations.join(', ')}"
+                state.nexusIqResults['status'] = 'WARN'
+                state.policyStatus['iast']     = 'WARN'
+                state.recordNexusIq('WARN')
+                state.recordScan('niq', 'WARN')
                 if (goldenFix != null) {
                     goldenFix.remediate(scanRefs)
                     def gf = state.projectsGoldenFix[state.currentProjectName]
                     if (gf?.prUrl) violMsg = "${violMsg} | GoldenFix pull request ${gf.prTitle} raised: ${gf.prUrl}"
                 }
-                state.stageError('Dependencies scan (Nexus IQ)', violMsg)
-                policyViolated = true
+                policy.warn(NIQ_STAGE, "${violMsg}. ${PolicyEngine.BLOCK_NOTE}")
             } else {
                 state.nexusIqResults['status'] = 'PASS'
                 state.policyStatus['iast']     = 'PASS'
@@ -109,12 +112,13 @@ class NexusIqService implements Serializable {
                 state.recordScan('niq', 'PASS')
                 script.echo "[DEP-SCAN] Policy satisfied."
             }
-            if (policyViolated) script.error("${violMsg}")
         } catch (ex) {
             def reason = ex.message ?: ex.getClass().getSimpleName()
-            state.stageError('Dependencies scan (Nexus IQ)', reason)
-            state.recordScan('niq', 'FAIL')
-            script.error("[DEP-SCAN] ${reason}")
+            state.nexusIqResults['status'] = 'WARN'
+            state.policyStatus['iast']     = 'WARN'
+            state.recordNexusIq('WARN')
+            state.recordScan('niq', 'WARN')
+            policy.warn(NIQ_STAGE, "Nexus IQ scan could not be completed: ${reason}. ${PolicyEngine.BLOCK_NOTE}")
         }
     }
 
@@ -148,11 +152,10 @@ class NexusIqService implements Serializable {
             if (text && extractLogSummary(text.tokenize('\n'))) {
                 script.echo "[DEP-SCAN] Console parse OK - C:${state.nexusIqResults['critical']} H:${state.nexusIqResults['high']} M:${state.nexusIqResults['medium']}"
                 return
-            } else {
-                script.error("DEP-SCAN] Console parse FAIL")
             }
+            script.echo "[DEP-SCAN] Console parse found no summary - counts remain 0"
         } catch (e) {
-            script.error("[DEP-SCAN] Console parse failed - counts remain 0")
+            script.echo "[DEP-SCAN] Console parse failed (${e.message ?: e.getClass().getSimpleName()}) - counts remain 0"
         }
     }
 

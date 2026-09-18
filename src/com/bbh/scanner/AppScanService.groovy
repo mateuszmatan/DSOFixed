@@ -394,6 +394,7 @@ echo "[INFO] IRX size: \$(wc -c < "\$WORKSPACE/\$APPSCAN_SCAN_NAME.irx" | tr -d 
         def scanId = dastStartScan()
         script.writeFile file: "${script.env.APPSCAN_LOG_DIR}/scan-dast-${script.env.APPSCAN_SCAN_NAME}.id", text: scanId
         script.echo "[DAST] Scan ID: ${scanId}"
+        recordDastConsoleLink(scanId)
 
         def pollTimeoutMin = (state.cfgDefaults.dast?.pollTimeoutMin ?: 60) as int
         def pollIntervalSec = (state.cfgDefaults.dast?.pollIntervalSec ?: 60) as int
@@ -558,29 +559,15 @@ echo "[INFO] IRX size: \$(wc -c < "\$WORKSPACE/\$APPSCAN_SCAN_NAME.irx" | tr -d 
             script.echo "[DAST] HTML report not found - vulnerability counts remain 0"
         }
 
-        def dastDefaults = state.cfgDefaults.dast ?: [:]
-        def warnOnly = (dastDefaults.warnOnly ?: false) as boolean
-        def limits = state.policyLimits.dast ?: [maxCritical: 0, maxHigh: 0, maxMedium: 0]
-        def violations = []
-        if ((counts.critical as int) > (limits.maxCritical as int)) violations << "Critical: ${counts.critical} > ${limits.maxCritical}"
-        if ((counts.high as int) > (limits.maxHigh as int)) violations << "High: ${counts.high} > ${limits.maxHigh}"
-        if ((counts.medium as int) > (limits.maxMedium as int)) violations << "Medium: ${counts.medium} > ${limits.maxMedium}"
-        if (violations) {
-            def detail = violations.join(' | ')
-            state.policyStatus['dast'] = warnOnly ? 'WARN' : 'FAIL'
-            state.recordScan('dast', state.policyStatus['dast'], dest.tokenize('/').last())
-            state.stageError('DAST - Dynamic Application Security Tests - HCL AppScan', detail)
-            def msg = "Security policies are not fulfilled! DAST: ${detail}"
-            if (warnOnly) {
-                script.unstable(msg)
-            } else {
-                script.error(msg)
-            }
-        } else {
-            state.policyStatus['dast'] = 'PASS'
-            state.recordScan('dast', 'PASS', dest.tokenize('/').last())
-            script.echo "[POLICY] DAST: all thresholds satisfied."
-        }
+        policy.registerFindings('dast', counts, dest.tokenize('/').last())
+    }
+
+    private void recordDastConsoleLink(String scanId) {
+        String base = ((state.cfg.asoc?.url ?: script.env.APPSCAN_SERVER_URL ?: '') as String).trim().replaceAll('/+$', '')
+        String appId = ((state.cfg.appId ?: '') as String).trim()
+        if (!base || !appId) return
+        String url = scanId ? "${base}/main/myapps/${appId}/scans/${scanId}" : "${base}/main/myapps/${appId}/scans"
+        state.recordScanArtifact('dast', 'hcl', url)
     }
 
     Map parseHtmlCounts(String htmlFile, String type) {

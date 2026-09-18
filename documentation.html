@@ -63,11 +63,12 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
     <li>Step 4 — First run</li>
     <li>config.yaml — full field reference</li>
     <li>Pipeline stages</li>
-    <li>Policy thresholds and project overrides</li>
+    <li>Policy thresholds</li>
     <li>Advanced — using library methods directly</li>
     <li>Supported build tools</li>
     <li>Supported deployment targets</li>
     <li>Troubleshooting</li>
+    <li>SelfService — onboard a project step by step</li>
   </ol>
 </div>
 
@@ -76,18 +77,18 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
   <table>
     <tr><th>#</th><th>Stage</th><th>What it does</th></tr>
     <tr><td>1</td><td>Monitor source changes</td><td>Checkout, AppScan setup, IRX generation per project</td></tr>
-    <tr><td>2</td><td>Unit tests</td><td>Build tool tests plus JaCoCo / lcov line coverage check</td></tr>
-    <tr><td>3</td><td>Dependencies scan (Nexus IQ)</td><td>Dependency scan with policy enforcement and an automatic GoldenFix pull request on violation</td></tr>
+    <tr><td>2</td><td>Unit tests</td><td>Build tool tests plus JaCoCo / lcov line coverage against the library minimum</td></tr>
+    <tr><td>3</td><td>Dependencies scan (Nexus IQ)</td><td>Dependency scan, an orange stage on a policy violation and an automatic GoldenFix pull request</td></tr>
     <tr><td>4</td><td>SAST — HCL AppScan</td><td>Static Application Security Testing, queued per project</td></tr>
     <tr><td>5</td><td>SCA (SonarQube)</td><td>Static code analysis and quality gate</td></tr>
-    <tr><td>6</td><td>Nexus delivery (static analysis passed)</td><td>Publish the snapshot artifact, only when the library security policy is met</td></tr>
+    <tr><td>6</td><td>Nexus delivery (static analysis passed)</td><td>Publish the snapshot artifact, always, even when an earlier stage is orange</td></tr>
     <tr><td>7</td><td>Lower test region deployment</td><td>Deploy to RD (VM over SSH or OpenShift)</td></tr>
     <tr><td>8</td><td>Regression tests</td><td>Trigger regression jobs, at least one job must be configured</td></tr>
     <tr><td>9</td><td>Smoke tests</td><td>Any number of local and remote smoke jobs in parallel, at least one must be configured</td></tr>
     <tr><td>10</td><td>Performance tests</td><td>Trigger performance jobs, at least one job must be configured</td></tr>
-    <tr><td>11</td><td>DAST — HCL AppScan</td><td>Dynamic Application Security Testing, report downloaded as HTML and PDF</td></tr>
-    <tr><td>12</td><td>Nexus delivery (safe artifact)</td><td>Publish the release artifact, only when the library security policy is met</td></tr>
-    <tr><td>13</td><td>Higher test environment deployment</td><td>Deploy to QC, only on request and only when the library security policy is met</td></tr>
+    <tr><td>11</td><td>DAST — HCL AppScan</td><td>Dynamic Application Security Testing, HTML report, HCL console link and PDF report</td></tr>
+    <tr><td>12</td><td>Nexus delivery (safe artifact)</td><td>Publish the release artifact, blocked as soon as any earlier stage is orange</td></tr>
+    <tr><td>13</td><td>Higher test environment deployment</td><td>Deploy to QC, only when every earlier stage is green and the checkbox is selected</td></tr>
   </table>
 
   <h3>Which pipeline to use</h3>
@@ -95,8 +96,8 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
   <table>
     <tr><th>Entry point</th><th>Runs</th><th>Use it when</th></tr>
     <tr><td><code>devSecOpsPipeline</code></td><td>All thirteen stages in one build</td><td>One job should cover the whole flow</td></tr>
-    <tr><td><code>devSecOpsSecurityPipeline</code></td><td>Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery, then triggers the extended pipeline</td><td>The static part runs on every commit and the rest is a separate job</td></tr>
-    <tr><td><code>devSecOpsExtendedPipeline</code></td><td>RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment</td><td>Downstream of the security pipeline, inherits the release verdict through <code>release-gate.json</code></td></tr>
+    <tr><td><code>devSecOpsSecurityPipeline</code></td><td>Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery; archives <code>config.yaml</code> and the release gate verdict</td><td>The static part runs on every commit and the rest is a separate job</td></tr>
+    <tr><td><code>devSecOpsExtendedPipeline</code></td><td>RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment</td><td>Downstream of the security pipeline, named in <code>securityPipeline:</code>, inherits the verdict through the copied <code>release-gate.json</code></td></tr>
   </table>
 
   <h3>After every build the library</h3>
@@ -116,7 +117,7 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
     <li><strong>Git repository reachable from Jenkins</strong> with <code>Jenkinsfile</code> and <code>config.yaml</code> committed at the repository root.</li>
     <li><strong>Supported build tool</strong>: Gradle, Maven or Flutter. Wrapper scripts are preferred and must be executable.</li>
     <li><strong>The code must compile</strong>, because the SAST stage builds an IRX archive from a compile step.</li>
-    <li><strong>Unit tests with coverage</strong>: JaCoCo for Gradle and Maven, lcov for Flutter. The library minimum is 60 % line coverage; a project may lower its own threshold, but below the library minimum the artifact is not released and QC is blocked.</li>
+    <li><strong>Unit tests with coverage</strong>: JaCoCo for Gradle and Maven, lcov for Flutter. The required 60 % line coverage comes from <code>resources/defaults.yaml</code> and cannot be changed by a project. Below it the Unit tests stage turns orange, the build continues to RD and the Nexus release plus the QC deployment stay blocked.</li>
     <li><strong>HCL AppScan on Cloud application registered</strong>, with the application id and an API key pair in <code>config.yaml</code>.</li>
     <li><strong>SonarQube project registered</strong> with a unique project key and a badge token for the report.</li>
     <li><strong>Nexus IQ application registered</strong>, with build artifacts matching the configured scan patterns.</li>
@@ -136,12 +137,12 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
 
 src/com/bbh/
 ├── build/BuildService.groovy           <span class="yaml-cm"># build, unit tests, coverage, test job execution</span>
-├── config/ConfigLoader.groovy          <span class="yaml-cm"># config merge, effective and library thresholds</span>
+├── config/ConfigLoader.groovy          <span class="yaml-cm"># config merge, library policy</span>
 ├── core/
 │   ├── OsHelper.groovy
 │   ├── PipelineState.groovy
-│   ├── PolicyEngine.groovy             <span class="yaml-cm"># project thresholds, fails the pipeline</span>
-│   ├── ReleaseGate.groovy              <span class="yaml-cm"># library policy, blocks Nexus release and QC</span>
+│   ├── PolicyEngine.groovy             <span class="yaml-cm"># library policy checks, marks a stage orange</span>
+│   ├── ReleaseGate.groovy              <span class="yaml-cm"># blocks Nexus release and QC when a stage is not green</span>
 │   └── StageLogger.groovy
 ├── deploy/{OpenshiftService,VmDeployService}.groovy
 ├── metrics/InfluxDbService.groovy
@@ -162,7 +163,7 @@ src/com/bbh/
 
   <div class="callout info">
     <span class="callout-icon">i</span>
-    <div class="callout-body"><strong>Config split.</strong> <code>resources/defaults.yaml</code> holds the library security policy and is controlled by the library team. <code>config.yaml</code> in the project repository holds project settings and may raise the thresholds for SAST, SCA, Nexus IQ and coverage, and nothing else.</div>
+    <div class="callout-body"><strong>Config split.</strong> <code>resources/defaults.yaml</code> holds the library security policy, the required line coverage and the timeouts, and is controlled by the library team. <code>config.yaml</code> in the project repository holds project settings only: application ids, servers, test jobs and deployment targets. Thresholds put into a project file are ignored.</div>
   </div>
 </div>
 
@@ -213,7 +214,10 @@ src/com/bbh/
   <h3>Jenkinsfile</h3>
 <pre><code><span class="at">@Library</span>(<span class="str">'DevSecOpsJenkinsLibrary'</span>) _
 
-<span class="fn">devSecOpsPipeline</span>(projectNames: <span class="str">'gui,backend-api'</span>)</code></pre>
+<span class="fn">devSecOpsPipeline</span>(
+    projectNames: <span class="str">'gui,backend-api'</span>,
+    agentNames:   [<span class="str">'linux-agent'</span>, <span class="str">'windows-agent'</span>]
+)</code></pre>
   <h3>config.yaml (minimal)</h3>
 <pre><code><span class="yaml-key">projects</span>:
   <span class="yaml-key">my-app</span>:
@@ -253,24 +257,24 @@ src/com/bbh/
   </div>
 
   <h3>Build parameters</h3>
-  <p>The library adds one boolean parameter. Security violations always fail the pipeline; a project that needs more room raises its own thresholds in <code>config.yaml</code>.</p>
+  <p>The library adds one boolean parameter. A policy violation never fails the pipeline: the stage turns orange, the build becomes UNSTABLE and keeps running, and the release plus QC stay blocked.</p>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
-    <tr><td><code>DEPLOY_HIGHER_ENV</code></td><td><code>false</code></td><td>Deploy to QC after all tests pass, allowed only when the library security policy is met.</td></tr>
+    <tr><td><code>DEPLOY_HIGHER_ENV</code></td><td><code>false</code></td><td>Deploy to QC, allowed only when every earlier stage is green.</td></tr>
   </table>
   <div class="callout warn">
     <span class="callout-icon">!</span>
-    <div class="callout-body"><strong><code>OVERRIDE_BBH_POLICIES</code> no longer exists.</strong> Raise the project thresholds in <code>config.yaml</code> instead. The build then keeps running and reaches RD, while the Nexus release and the QC deployment stay blocked until the library policy is met.</div>
+    <div class="callout-body"><strong>There is no override parameter and no project threshold.</strong> Every build runs every stage. A stage that breaks the library policy is coloured orange with the counts behind it, the snapshot delivery and the RD deployment still happen, and the Nexus release plus the QC deployment stay blocked until the findings are fixed.</div>
   </div>
 </div>
 
 <div class="section">
   <h2><span class="num">8</span> Step 4 — First run</h2>
   <ul>
-    <li><strong>Stage 1</strong> checks out the code and reads <code>config.yaml</code>. The console prints the effective thresholds and, when they were raised, the library policy next to them.</li>
+    <li><strong>Stage 1</strong> checks out the code and reads <code>config.yaml</code>. The console prints the library policy that every stage is checked against.</li>
     <li><strong>Stage 5 (SAST)</strong> uploads compiled code to ASoC and waits, typically 20 to 50 minutes.</li>
     <li><strong>Stage 11 (DAST)</strong> is skipped for projects with <code>dast.enabled: false</code>.</li>
-    <li><strong>Stage 13</strong> runs only with <code>DEPLOY_HIGHER_ENV=true</code> and a clean release gate.</li>
+    <li><strong>Stage 12</strong> is skipped when any earlier stage is orange, and <strong>stage 13</strong> runs only with <code>DEPLOY_HIGHER_ENV=true</code> and every stage green.</li>
     <li>Open <strong>Pipeline Report</strong> in the left sidebar after the build.</li>
   </ul>
 </div>
@@ -290,19 +294,13 @@ src/com/bbh/
       <span class="yaml-key">insecureTls</span>: <span class="yaml-val">false</span>              <span class="yaml-cm"># true adds curl -k to the ASoC REST calls, keep false</span>
 
     <span class="yaml-key">coverage</span>:
-      <span class="yaml-key">minLine</span>:    <span class="num-c">60</span>                   <span class="yaml-cm"># project minimum; below the library 60% the release is blocked</span>
-      <span class="yaml-key">reportPath</span>: <span class="str">""</span>
+      <span class="yaml-key">reportPath</span>: <span class="str">""</span>                 <span class="yaml-cm"># the required 60% lives in the library defaults only</span>
 
     <span class="yaml-key">sast</span>:
       <span class="yaml-key">scanName</span>:    <span class="str">""</span>
-      <span class="yaml-key">maxCritical</span>: <span class="num-c">0</span>                  <span class="yaml-cm"># optional project thresholds</span>
-      <span class="yaml-key">maxHigh</span>:     <span class="num-c">0</span>
-      <span class="yaml-key">maxMedium</span>:   <span class="num-c">0</span>
 
     <span class="yaml-key">sca</span>:
-      <span class="yaml-key">maxCritical</span>: <span class="num-c">0</span>                  <span class="yaml-cm"># SonarQube findings</span>
-      <span class="yaml-key">maxHigh</span>:     <span class="num-c">0</span>
-      <span class="yaml-key">maxMedium</span>:   <span class="num-c">0</span>
+      <span class="yaml-key">scanName</span>:    <span class="str">""</span>
 
     <span class="yaml-key">tools</span>:
       <span class="yaml-key">sonar</span>:
@@ -317,12 +315,9 @@ src/com/bbh/
         <span class="yaml-key">scanPatterns</span>:       []
         <span class="yaml-key">stage</span>:              <span class="str">"build"</span>
         <span class="yaml-key">failOnNetworkError</span>: <span class="yaml-val">false</span>
-        <span class="yaml-key">maxCritical</span>:        <span class="num-c">0</span>            <span class="yaml-cm"># optional project thresholds</span>
-        <span class="yaml-key">maxHigh</span>:            <span class="num-c">0</span>
-        <span class="yaml-key">maxMedium</span>:          <span class="num-c">0</span>
 
     <span class="yaml-key">dast</span>:
-      <span class="yaml-key">enabled</span>:    <span class="yaml-val">false</span>                <span class="yaml-cm"># thresholds are NOT overridable for DAST</span>
+      <span class="yaml-key">enabled</span>:    <span class="yaml-val">false</span>                <span class="yaml-cm"># thresholds come from the library defaults</span>
       <span class="yaml-key">targetUrl</span>:  <span class="str">""</span>
       <span class="yaml-key">presenceId</span>: <span class="str">""</span>
 
@@ -392,10 +387,10 @@ src/com/bbh/
   <h2><span class="num">10</span> Pipeline stages</h2>
 
   <h3>Stage 2: Unit tests</h3>
-  <p>Runs the tests with coverage collection and compares the line coverage with <code>coverage.minLine</code> of the project. Below the project threshold the pipeline fails. Above the project threshold but below the library minimum the pipeline continues to RD, while the Nexus release and the QC deployment are blocked.</p>
+  <p>Runs the tests with coverage collection and compares the line coverage with <code>coverage.minLine</code> of <code>resources/defaults.yaml</code>, which is 60 %. The stage never fails on coverage: below the required value the box turns <strong>orange</strong>, shows the measured value next to the required one, and the reason states that the step failed and that the Nexus release and the QC deployment are blocked. A missing coverage report is treated the same way.</p>
 
   <h3>Stage 3: Dependencies scan (Nexus IQ)</h3>
-  <p>Runs <code>nexusPolicyEvaluation</code> and compares the critical, severe and moderate counts with the effective thresholds. On a violation the stage fails and the GoldenFix remediation starts.</p>
+  <p>Runs <code>nexusPolicyEvaluation</code> and compares the critical, severe and moderate counts with the library thresholds. On a violation the stage turns orange with the counts, the GoldenFix remediation starts and the release plus QC are blocked, while the pipeline keeps running.</p>
 
   <h4>GoldenFix — automatic remediation pull request</h4>
   <ol>
@@ -408,40 +403,47 @@ src/com/bbh/
   <p>Lock files such as <code>package-lock.json</code> or <code>poetry.lock</code> are not regenerated, and hash pinned requirement files are left untouched. A GoldenFix error never changes the result of the Nexus IQ stage, it is only reported.</p>
 
   <h3>Stage 11: DAST — HCL AppScan</h3>
-  <p>Runs for projects with <code>dast.enabled: true</code>. The report is downloaded as HTML, which is parsed for the vulnerability counts, and as <strong>PDF</strong>. Both are archived and linked from the pipeline report, exactly like the SAST report.</p>
+  <p>Runs for projects with <code>dast.enabled: true</code>. The report is downloaded as HTML, which is parsed for the vulnerability counts, and as <strong>PDF</strong>. Both are archived, and the Security Gates table offers three entries: the HTML report, the <strong>HCL AppScan</strong> console page of the scan and the PDF report. Above the DAST thresholds the stage turns orange with the critical, high and medium counts.</p>
 
   <h3>Stages 6 to 10: delivery and tests</h3>
-  <p>Stage 6 publishes the snapshot artifact, stage 7 deploys to RD, then the tests run in the order regression, smoke, performance, followed by DAST. Each test stage needs at least one configured job. Every test stage runs <strong>all</strong> configured jobs, even when some fail, and reports one aggregated failure at the end. A stage may contain hundreds of jobs. At most <code>tests.maxParallel</code> jobs run at the same time, with a worker pool above that limit. Remote jobs can be given as a full URL without any Remote Jenkins configuration.</p>
+  <p>Stage 6 publishes the snapshot artifact and stage 7 deploys to RD. Both always run, even when an earlier stage is orange. Then the tests run in the order regression, smoke, performance, followed by DAST. Each test stage needs at least one configured job. Every test stage runs <strong>all</strong> configured jobs, even when some fail, and then turns orange with a summary of the failed jobs. A stage may contain hundreds of jobs. At most <code>tests.maxParallel</code> jobs run at the same time, with a worker pool above that limit. Remote jobs can be given as a full URL without any Remote Jenkins configuration.</p>
 
-  <h3>Project thresholds and the release gate</h3>
-  <p><strong>Project thresholds</strong> in <code>config.yaml</code> decide whether the pipeline keeps running. They may be raised for SAST, SCA, Nexus IQ and coverage only. Exceeding them fails the stage and the pipeline.</p>
-  <p><strong>The library policy</strong> in <code>resources/defaults.yaml</code> decides what may leave the pipeline. When the findings or the coverage are worse than the library policy:</p>
-  <ul>
-    <li>the artifact is <strong>not published to Nexus</strong>, neither the snapshot nor the release delivery,</li>
-    <li>the <strong>QC deployment is blocked</strong>,</li>
-    <li>the RD deployment still runs, so developers can work with the build,</li>
-    <li>the build is marked UNSTABLE, the blocked stage is shown as <code>BLOCKED</code> and the report shows a <strong>Release policy</strong> card with every violation.</li>
-  </ul>
-  <p>Any stage that did not pass blocks the release too. If regression, smoke, performance or DAST fails in the extended pipeline, the artifact is not published to the release repository and QC stays unavailable.</p>
-  <p>Each pipeline judges the results it owns and hands its verdict to the next one through the archived <code>release-gate.json</code>, so a violation found in the security pipeline also blocks the release in the extended pipeline.</p>
+  <h3>How a failure is reported: orange stages and the release gate</h3>
+  <p>No security or test finding stops the pipeline. Every stage from the unit tests to DAST runs on every build. A stage that breaks the library policy is marked <strong>orange</strong>, the build becomes UNSTABLE, and the reason names the failed step, the counts behind it and the consequence.</p>
+  <table>
+    <tr><th>Stage</th><th>On a policy violation</th><th>Consequence</th></tr>
+    <tr><td>Unit tests</td><td>Orange, with the measured and the required line coverage</td><td>Release and QC blocked</td></tr>
+    <tr><td>Dependencies scan (Nexus IQ)</td><td>Orange, with critical / high / medium counts, GoldenFix pull request raised</td><td>Release and QC blocked</td></tr>
+    <tr><td>SAST</td><td>Orange, with critical / high / medium counts</td><td>Release and QC blocked</td></tr>
+    <tr><td>SCA (SonarQube)</td><td>Orange, with the quality gate status</td><td>Release and QC blocked</td></tr>
+    <tr><td>Nexus delivery (snapshot)</td><td>Always runs</td><td>&mdash;</td></tr>
+    <tr><td>Lower test region deployment (RD)</td><td>Always runs</td><td>&mdash;</td></tr>
+    <tr><td>Regression, smoke, performance</td><td>Orange, with the failed jobs</td><td>Release and QC blocked</td></tr>
+    <tr><td>DAST</td><td>Orange, with critical / high / medium counts</td><td>Release and QC blocked</td></tr>
+    <tr><td>Nexus delivery (release)</td><td>Skipped when anything above is orange</td><td>No release artifact</td></tr>
+    <tr><td>Higher test environment deployment (QC)</td><td>Skipped unless everything is green and the checkbox is selected</td><td>No QC deployment</td></tr>
+  </table>
+  <p>The <strong>release gate</strong> collects the verdict. It blocks the second Nexus delivery and the QC deployment when any stage is not green, when a scanner count exceeds the library policy, or when the line coverage is below the required 60 %. The report shows a <strong>Release policy</strong> card listing every violation, for example <code>gui Dependencies (Nexus IQ) critical 1 &gt; 0</code> or <code>line coverage 41.0% below the required 60%</code>.</p>
+  <p>Each pipeline judges the results it owns and hands its verdict to the next one through the archived <code>release-gate.json</code>, so an orange stage in the security pipeline also blocks the release in the extended pipeline.</p>
 </div>
 
 <div class="section">
-  <h2><span class="num">11</span> Policy thresholds and project overrides</h2>
+  <h2><span class="num">11</span> Policy thresholds</h2>
+  <p>All thresholds live in <code>resources/defaults.yaml</code> inside the library. A project cannot change any of them in <code>config.yaml</code>: a value put there is ignored. Exceeding a threshold colours the stage orange and blocks the Nexus release and the QC deployment, and never fails the build.</p>
   <table>
-    <tr><th>Scanner</th><th>Metric</th><th class="thresh-val">Library default</th><th>Overridable in config.yaml</th></tr>
-    <tr><td>SAST (HCL AppScan)</td><td>maxCritical / maxHigh / maxMedium</td><td class="thresh-val">0</td><td>yes</td></tr>
-    <tr><td>SCA (SonarQube)</td><td>maxCritical / maxHigh / maxMedium</td><td class="thresh-val">0</td><td>yes</td></tr>
-    <tr><td>Dependencies (Nexus IQ)</td><td>maxCritical / maxHigh / maxMedium</td><td class="thresh-val">0</td><td>yes</td></tr>
+    <tr><th>Scanner</th><th>Metric</th><th class="thresh-val">Library policy</th><th>Overridable by a project</th></tr>
+    <tr><td>SAST (HCL AppScan)</td><td>maxCritical / maxHigh / maxMedium</td><td class="thresh-val">0</td><td>no</td></tr>
+    <tr><td>SCA (SonarQube)</td><td>maxCritical / maxHigh / maxMedium</td><td class="thresh-val">0</td><td>no</td></tr>
+    <tr><td>Dependencies (Nexus IQ)</td><td>maxCritical / maxHigh / maxMedium</td><td class="thresh-val">0</td><td>no</td></tr>
     <tr><td>DAST (HCL AppScan)</td><td>maxCritical / maxHigh / maxMedium</td><td class="thresh-val">0</td><td>no</td></tr>
-    <tr><td>Code coverage</td><td>minLine</td><td class="thresh-val">60 %</td><td>yes</td></tr>
-    <tr><td>Test jobs</td><td>maxParallel</td><td class="thresh-val">20</td><td>yes</td></tr>
+    <tr><td>Code coverage</td><td>minLine</td><td class="thresh-val">60 %</td><td>no</td></tr>
+    <tr><td>Test jobs</td><td>maxParallel</td><td class="thresh-val">20</td><td>yes, per stage</td></tr>
     <tr><td>SAST polling</td><td>pollTimeoutMin / pollIntervalSec</td><td class="thresh-val">50 min / 30 s</td><td>no</td></tr>
     <tr><td>DAST polling</td><td>pollTimeoutMin / pollIntervalSec</td><td class="thresh-val">60 min / 60 s</td><td>no</td></tr>
   </table>
-  <div class="callout warn">
-    <span class="callout-icon">!</span>
-    <div class="callout-body">Raising a project threshold only buys room to keep working on RD. The library defaults still decide whether the artifact is released to Nexus and whether QC can be deployed.</div>
+  <div class="callout info">
+    <span class="callout-icon">i</span>
+    <div class="callout-body">The required coverage is shown in the report exactly as configured in <code>resources/defaults.yaml</code>, so changing it there immediately changes both the value the report displays and the value it checks against.</div>
   </div>
 </div>
 
@@ -449,26 +451,27 @@ src/com/bbh/
   <h2><span class="num">12</span> Advanced — using library methods directly</h2>
   <table>
     <tr><th>Method</th><th>Description</th></tr>
-    <tr><td><code>initialize()</code></td><td>Load config, compute effective and library thresholds, detect OS</td></tr>
+    <tr><td><code>initialize()</code></td><td>Load config, apply the library policy, detect OS</td></tr>
     <tr><td><code>appscanSetup()</code>, <code>appscanLogin()</code></td><td>Install SAClientUtil, authenticate the CLI</td></tr>
     <tr><td><code>appscanResolveSourceDir(String path = null)</code>, <code>appscanGenerateIRX(int timeoutMin = 120)</code></td><td>Prepare the IRX archive</td></tr>
     <tr><td><code>appscanQueue(Map config)</code>, <code>appscanWait()</code>, <code>appscanDownloadReports()</code></td><td>Queue the SAST scan, wait, download the report</td></tr>
     <tr><td><code>appscanRenameSastReport()</code>, <code>appscanRenameDastReport()</code></td><td>Rename the reports with the scan name, PDF included</td></tr>
-    <tr><td><code>appscanEnforcePolicy()</code>, <code>sonarscanEnforcePolicy()</code></td><td>Enforce the project thresholds, return critical plus high plus medium</td></tr>
+    <tr><td><code>appscanEnforcePolicy()</code>, <code>sonarscanEnforcePolicy()</code></td><td>Check the findings against the library policy, return critical plus high plus medium</td></tr>
     <tr><td><code>dastScan()</code></td><td>Full DAST run, downloads the HTML and PDF reports</td></tr>
-    <tr><td><code>buildArtifact()</code>, <code>unitTests()</code>, <code>checkCoverage(int min = 60)</code></td><td>Build, test, enforce the coverage threshold</td></tr>
+    <tr><td><code>buildArtifact()</code>, <code>unitTests()</code>, <code>checkCoverage()</code></td><td>Build, test, compare the coverage with the library minimum</td></tr>
     <tr><td><code>depVulnScan()</code></td><td>Nexus IQ scan, raises the GoldenFix pull request on violation</td></tr>
     <tr><td><code>codeQualityScan()</code></td><td>SonarQube analysis</td></tr>
     <tr><td><code>smokeTests()</code>, <code>regressionTests()</code>, <code>performanceTests()</code></td><td>Run all configured jobs with the configured parallelism</td></tr>
-    <tr><td><code>releaseAllowed(String stageName)</code></td><td>Release gate check; marks the stage <code>BLOCKED</code> and the build UNSTABLE when the library policy is not met</td></tr>
+    <tr><td><code>releaseAllowed(String stageName)</code></td><td>Release gate check; marks the stage <code>BLOCKED</code> and the build UNSTABLE when an earlier stage is not green</td></tr>
     <tr><td><code>publishReleaseGate()</code></td><td>Write <code>release-gate.json</code> for the downstream pipeline</td></tr>
     <tr><td><code>deployRD()</code> / <code>deployDvWithDodPlugin()</code>, <code>deployQC()</code>, <code>deployOpenshift(String env)</code></td><td>Deployments</td></tr>
     <tr><td><code>publishArtifactQC()</code>, <code>pushToNexus()</code>, <code>nexusDelivery(String env)</code></td><td>Nexus and registry delivery</td></tr>
     <tr><td><code>buildDockerImage(String projectName)</code>, <code>copyImageToNexus()</code>, <code>checkDeploymentRepo()</code></td><td>OpenShift image build and promotion</td></tr>
     <tr><td><code>bumpVersion(String file, String version)</code></td><td>Update <code>APP_VERSION</code></td></tr>
     <tr><td><code>generateHtmlReport()</code>, <code>feedInfluxDB(String pipelineType)</code></td><td>Report and DORA metrics</td></tr>
-    <tr><td><code>getProjects()</code>, <code>getCFG()</code>, <code>switchProject(String name)</code></td><td>Multi project helpers, switching recomputes the thresholds</td></tr>
+    <tr><td><code>getProjects()</code>, <code>getCFG()</code>, <code>switchProject(String name)</code></td><td>Multi project helpers</td></tr>
     <tr><td><code>stageStart/stageDone/stagePass/stageFail/stageWarn/stageError</code></td><td>Stage bookkeeping for the report</td></tr>
+    <tr><td><code>finishStage(String name)</code>, <code>failStage(String name)</code></td><td>Close a stage: green unless it already recorded an orange or red result, or closed as failed</td></tr>
     <tr><td><code>logStageResult(String name, String status)</code>, <code>section(String text)</code></td><td>Console output</td></tr>
   </table>
 </div>
@@ -503,8 +506,11 @@ src/com/bbh/
 <div class="section">
   <h2><span class="num">15</span> Troubleshooting</h2>
 
-  <h3>Nexus delivery and QC deployment were skipped</h3>
-  <p>The release gate compares the scan results and the line coverage with the library policy in <code>resources/defaults.yaml</code>. A project may raise its own thresholds for SAST, SCA, Nexus IQ and coverage in <code>config.yaml</code>, which lets the build reach RD, but while the library policy is exceeded the artifact is not published to Nexus and QC is blocked. The build becomes UNSTABLE and the <strong>Release policy</strong> card lists every violation.</p>
+  <h3>Nexus release and QC deployment were skipped</h3>
+  <p>The release gate blocked them because at least one earlier stage is orange. The <strong>Release policy</strong> card lists every violation, for example <code>gui Dependencies (Nexus IQ) critical 1 &gt; 0</code>, <code>stage 'Smoke tests' is WARN</code> or <code>line coverage 41.0% below the required 60%</code>. The snapshot delivery and the RD deployment are never blocked.</p>
+
+  <h3>A stage is orange and the build is UNSTABLE</h3>
+  <p>That is the normal reaction to a policy violation or a failed test job. The stage box carries a <strong>Reason</strong> line with the failed step, the counts and the sentence that the Nexus release and the QC deployment stay blocked. The pipeline continues with every remaining stage.</p>
 
   <h3>GoldenFix pull request was not raised</h3>
   <p>The GoldenFix card shows the reason. <code>NOT_CONFIGURED</code> means <code>scm.bitbucket.url</code> or <code>credentialsId</code> is missing. <code>NO_FIXES</code> means Nexus IQ has no remediation version for the violating direct dependencies. <code>NO_MANIFEST_CHANGES</code> means the vulnerable versions are not declared in any supported manifest, for example because a BOM manages them. <code>ERROR</code> means the <code>[GOLDENFIX]</code> lines in the console hold the details, usually permissions or push rights.</p>
@@ -515,8 +521,8 @@ src/com/bbh/
   <h3>Many smoke tests (hundreds of jobs)</h3>
   <p>All jobs run even when some fail, and at most <code>tests.maxParallel</code> run at the same time. Remote jobs can be listed by URL in <code>tests.smoke.urls</code> and share settings through <code>tests.smoke.defaults</code>. Raise <code>maxParallel</code> only if the remote instances have enough executors.</p>
 
-  <h3>"No test jobs configured — tests are mandatory"</h3>
-  <p>Each test stage needs at least one entry. A placeholder with an empty <code>job</code> is reported as <code>NOT_CONFIGURED</code>, which still counts as a failed job for the stage result.</p>
+  <h3>A test stage is orange with "no test jobs configured"</h3>
+  <p>Each test stage needs at least one entry. A placeholder with an empty <code>job</code> is reported as <code>NOT_CONFIGURED</code>, which counts as a job that did not succeed, so the stage turns orange and the release and QC stay blocked.</p>
 
   <h3>"config.yaml not found in workspace"</h3>
   <p>The project repository must contain <code>config.yaml</code> at its root with a <code>projects:</code> section, committed on the built branch.</p>
@@ -529,6 +535,76 @@ src/com/bbh/
 
   <h3>SonarQube stage fails with "SonarQube server not configured"</h3>
   <p>Register the server in <em>Manage Jenkins, Configure System, SonarQube servers</em> under the name <code>SonarQube</code>.</p>
+</div>
+
+<div class="section">
+  <h2><span class="num">16</span> SelfService — onboard a project step by step</h2>
+  <p>Everything below is done by the project team, without any request to the DevSecOps team.</p>
+
+  <h3>Step 1 — Check the prerequisites of your application</h3>
+  <ul>
+    <li>The repository is reachable by Jenkins and builds with Gradle, Maven or Flutter.</li>
+    <li>Unit tests produce a JaCoCo XML report, or <code>coverage/lcov.info</code> for Flutter, with at least 60 % line coverage.</li>
+    <li>The build produces a JAR or WAR under <code>build/libs</code> or <code>target</code>.</li>
+    <li>VM deployment: a deployment script, a <code>version.properties</code> with <code>APP_VERSION=</code> and SSH access from the agent to the RD and QC hosts.</li>
+    <li>OpenShift deployment: <code>deployConfig.yml</code> in the repository root and the cluster tokens in Jenkins credentials.</li>
+  </ul>
+
+  <h3>Step 2 — Register your application in the tools</h3>
+  <table>
+    <tr><th>Tool</th><th>What you need</th><th>Where it goes in config.yaml</th></tr>
+    <tr><td>HCL AppScan on Cloud</td><td>Application id and an API key pair</td><td><code>appId</code>, <code>asoc.keyId</code>, <code>asoc.keySecret</code></td></tr>
+    <tr><td>SonarQube</td><td>Project key, project name, badge token</td><td><code>tools.sonar.*</code></td></tr>
+    <tr><td>Nexus IQ</td><td>Application public id</td><td><code>tools.nexusIq.application</code></td></tr>
+    <tr><td>Bitbucket</td><td>Repository URL and credentials with push and pull request rights</td><td><code>scm.bitbucket.*</code></td></tr>
+    <tr><td>InfluxDB (optional)</td><td>Write endpoint and token</td><td><code>influx.*</code></td></tr>
+  </table>
+
+  <h3>Step 3 — Create the test jobs</h3>
+  <p>Create at least one Jenkins job for regression, one for smoke and one for performance tests. They may live on this Jenkins instance (<code>type: local</code>) or on any other instance, referenced by full URL. A stage may hold hundreds of jobs; at most <code>tests.*.maxParallel</code> run at the same time.</p>
+
+  <h3>Step 4 — Add config.yaml to your repository root</h3>
+  <p>Copy <code>config.yaml.template</code> from this library, keep only the <code>projects:</code> section and fill in your values. Do not add thresholds or a coverage minimum, they come from the library. A complete two project example with SAST, DAST, SonarQube, Nexus IQ, GoldenFix, smoke, regression, performance and both deployment targets is in <code>examples/CertScanner/config.yaml</code>.</p>
+
+  <h3>Step 5 — Add the Jenkinsfile to your repository root</h3>
+<pre><code><span class="at">@Library</span>(<span class="str">'DevSecOpsJenkinsLibrary'</span>) _
+
+<span class="fn">devSecOpsPipeline</span>(
+    projectNames: <span class="str">'gui,backend-api'</span>,
+    agentNames:   [<span class="str">'linux-agent'</span>, <span class="str">'windows-agent'</span>]
+)</code></pre>
+  <p>Use <code>devSecOpsSecurityPipeline</code> plus <code>devSecOpsExtendedPipeline</code> instead when the static part should run on every commit and the rest in a separate job. The extended job takes <code>securityPipeline: '&lt;name of the static job&gt;'</code> and copies <code>config.yaml</code> and <code>release-gate.json</code> from it; chain the two jobs in Jenkins, the library does not start the second one by itself. A complete example of both is in <code>examples/README.md</code>.</p>
+
+  <h3>Step 6 — Create the Jenkins job</h3>
+  <p>A Pipeline job with <strong>Pipeline script from SCM</strong>, your Git repository, your branch and the script path <code>Jenkinsfile</code>. Nothing else has to be configured.</p>
+
+  <h3>Step 7 — Run the pipeline</h3>
+  <p>Click <strong>Build Now</strong>. Select <code>DEPLOY_HIGHER_ENV</code> only when you want the QC deployment, which happens only when every stage is green.</p>
+
+  <h3>Step 8 — Read the report</h3>
+  <ul>
+    <li>the stage flow with one box per stage and per project, green when the stage passed and orange when it broke the policy,</li>
+    <li>the <strong>Reason</strong> line of each orange box, with the counts and the consequence,</li>
+    <li>the <strong>Security Gates</strong> table with the findings of SAST, DAST, Nexus IQ and SonarQube and links to the reports, the HCL AppScan console and the PDF,</li>
+    <li>the <strong>Release policy</strong> card telling you whether the artifact was released and whether QC is allowed,</li>
+    <li>the <strong>Nexus IQ GoldenFix</strong> card with the pull request that upgrades the vulnerable dependencies,</li>
+    <li>the <strong>Smoke tests</strong> table with one row per job.</li>
+  </ul>
+
+  <h3>Step 9 — Fix what is orange</h3>
+  <p>Merge the GoldenFix pull request, fix the SAST, SonarQube or DAST findings, raise the coverage or repair the failing test jobs. The next green build is released to Nexus and may be deployed to QC.</p>
+
+  <h3>Onboarding checklist</h3>
+  <ul>
+    <li><code>Jenkinsfile</code> and <code>config.yaml</code> committed at the repository root</li>
+    <li><code>appId</code>, <code>asoc.keyId</code> and <code>asoc.keySecret</code> filled in for every project</li>
+    <li>SonarQube project key and Nexus IQ application configured</li>
+    <li>At least one job configured for regression, smoke and performance</li>
+    <li><code>scm.bitbucket.url</code> and <code>credentialsId</code> set, so GoldenFix can raise pull requests</li>
+    <li>Deployment target configured, <code>deploy.vm.*</code> or <code>deploy.openshift.*</code></li>
+    <li>Unit tests reach 60 % line coverage</li>
+    <li>First build green, report opened, release policy card checked</li>
+  </ul>
 </div>
 
 <div class="footer">DevSecOpsJenkinsLibrary — BBH ITSS DevSecOps Team</div>

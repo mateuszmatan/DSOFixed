@@ -35,7 +35,7 @@ private void _setup() {
     _config    = new ConfigLoader(this, _state)
     _appScan   = new AppScanService(this, _state, _os, _policy, _build)
     _sonar     = new SonarService(this, _state, _os, _build)
-    _nexusIq   = new NexusIqService(this, _state, com.bbh.remediation.GoldenFixFactory.create(this, _state))
+    _nexusIq   = new NexusIqService(this, _state, _policy, com.bbh.remediation.GoldenFixFactory.create(this, _state))
     _report    = new HtmlSecurityReportService(this, _state, _os, _policy)
     _influx    = new InfluxDbService(this, _state, _os)
     _openshift = new OpenshiftService(this, _state)
@@ -62,9 +62,9 @@ def reportArtifactBuild()     { _setup(); _build.reportArtifactBuild() }
 def reportUnitTests()         { _setup(); _build.reportUnitTests() }
 def buildArtifact()           { _setup(); _build.buildArtifact() }
 def unitTests()               { _setup(); _build.unitTests() }
-def checkCoverage(int min = 60) {
+def checkCoverage() {
     _setup()
-    _build.checkCoverage(min ?: (_state.coverage?.minRequired ?: 60))
+    _build.checkCoverage()
 }
 
 def appscanEnforcePolicy() {
@@ -119,6 +119,9 @@ def logStageResult(String stageName, String status) {
     new com.bbh.core.StageLogger(this, _state).logStageResult(stageName, status)
 }
 
+def finishStage(String name) { _setup(); new com.bbh.core.StageLogger(this, _state).finish(name) }
+def failStage(String name)   { _setup(); new com.bbh.core.StageLogger(this, _state).fail(name) }
+
 def section(String text)      { _setup(); new com.bbh.core.StageLogger(this, _state).section(text) }
 def startSection(String text) { _setup(); new com.bbh.core.StageLogger(this, _state).startSection(text) }
 def endSection(String text)   { _setup(); new com.bbh.core.StageLogger(this, _state).endSection(text) }
@@ -171,8 +174,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always   { script { dsl.stageDone('Monitor source changes (download sources)') } }
-                    success  { script { dsl.stagePass('Monitor source changes (download sources)'); dsl.logStageResult('Monitor source changes (download sources)', 'PASS') } }
-                    failure  { script { dsl.stageFail('Monitor source changes (download sources)'); dsl.logStageResult('Monitor source changes (download sources)', 'FAIL') } }
+                    success  { script { dsl.finishStage('Monitor source changes (download sources)') } }
+                    failure  { script { dsl.failStage('Monitor source changes (download sources)') } }
+                    unstable { script { dsl.finishStage('Monitor source changes (download sources)') } }
                 }
             }
 
@@ -185,15 +189,15 @@ def call(Map config = [:]) {
                             dsl.switchProject(pName)
                             dsl.buildArtifact()
                             dsl.unitTests()
-                            dsl.checkCoverage((dsl.getCFG().coverage?.minLine ?: 60) as int)
+                            dsl.checkCoverage()
                         }
                     }
                 }
                 post {
                     always   { script { dsl.stageDone('Unit tests') } }
-                    success  { script { dsl.stagePass('Unit tests'); dsl.logStageResult('Unit tests', 'PASS') } }
-                    failure  { script { dsl.stageFail('Unit tests'); dsl.logStageResult('Unit tests', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('Unit tests'); dsl.logStageResult('Unit tests', 'WARN') } }
+                    success  { script { dsl.finishStage('Unit tests') } }
+                    failure  { script { dsl.failStage('Unit tests') } }
+                    unstable { script { dsl.finishStage('Unit tests') } }
                 }
             }
 
@@ -210,9 +214,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always   { script { dsl.stageDone('Dependencies scan (Nexus IQ)') } }
-                    success  { script { dsl.stagePass('Dependencies scan (Nexus IQ)'); dsl.logStageResult('Dependencies scan (Nexus IQ)', 'PASS') } }
-                    failure  { script { dsl.stageFail('Dependencies scan (Nexus IQ)'); dsl.logStageResult('Dependencies scan (Nexus IQ)', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('Dependencies scan (Nexus IQ)'); dsl.logStageResult('Dependencies scan (Nexus IQ)', 'WARN') } }
+                    success  { script { dsl.finishStage('Dependencies scan (Nexus IQ)') } }
+                    failure  { script { dsl.failStage('Dependencies scan (Nexus IQ)') } }
+                    unstable { script { dsl.finishStage('Dependencies scan (Nexus IQ)') } }
                 }
             }
 
@@ -243,9 +247,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always   { script { dsl.stageDone('SAST - Static Application Security Tests - HCL AppScan') } }
-                    success  { script { dsl.stagePass('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'PASS') } }
-                    failure  { script { dsl.stageFail('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('SAST - Static Application Security Tests - HCL AppScan'); dsl.logStageResult('SAST - Static Application Security Tests - HCL AppScan', 'WARN') } }
+                    success  { script { dsl.finishStage('SAST - Static Application Security Tests - HCL AppScan') } }
+                    failure  { script { dsl.failStage('SAST - Static Application Security Tests - HCL AppScan') } }
+                    unstable { script { dsl.finishStage('SAST - Static Application Security Tests - HCL AppScan') } }
                 }
             }
 
@@ -263,14 +267,13 @@ def call(Map config = [:]) {
                 }
                 post {
                     always   { script { dsl.stageDone('SCA (SonarQube)') } }
-                    success  { script { dsl.stagePass('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'PASS') } }
-                    failure  { script { dsl.stageFail('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'FAIL') } }
-                    unstable { script { dsl.stageWarn('SCA (SonarQube)'); dsl.logStageResult('SCA (SonarQube)', 'WARN') } }
+                    success  { script { dsl.finishStage('SCA (SonarQube)') } }
+                    failure  { script { dsl.failStage('SCA (SonarQube)') } }
+                    unstable { script { dsl.finishStage('SCA (SonarQube)') } }
                 }
             }
 
             stage('Nexus delivery (Static analysis passed)') {
-                when { expression { return dsl.releaseAllowed('Nexus delivery (Static analysis passed)') } }
                 steps {
                     script {
                         dsl.stageStart('Nexus delivery (Static analysis passed)')
@@ -290,8 +293,9 @@ def call(Map config = [:]) {
                 }
                 post {
                     always  { script { dsl.stageDone('Nexus delivery (Static analysis passed)') } }
-                    success { script { dsl.stagePass('Nexus delivery (Static analysis passed)'); dsl.logStageResult('Nexus delivery (Static analysis passed)', 'PASS') } }
-                    failure { script { dsl.stageFail('Nexus delivery (Static analysis passed)'); dsl.logStageResult('Nexus delivery (Static analysis passed)', 'FAIL') } }
+                    success  { script { dsl.finishStage('Nexus delivery (Static analysis passed)') } }
+                    failure  { script { dsl.failStage('Nexus delivery (Static analysis passed)') } }
+                    unstable { script { dsl.finishStage('Nexus delivery (Static analysis passed)') } }
                 }
             }
         }

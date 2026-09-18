@@ -143,14 +143,14 @@ abstract class AbstractHtmlReportService implements Serializable {
         def dast  = policy.scannerStageName('dast')
 
         if (ran.contains(state.stageResults[sast])) {
-            links[sast] = scanReportLinks(artifactBase, 'sast_file', '', 'SAST', 'appscan-report.html')
+            links[sast] = scanReportLinks(artifactBase, 'sast_file', '', 'sast_hcl', 'SAST', 'appscan-report.html')
         }
         if (ran.contains(state.stageResults[sca])) {
             def sonarUrl = state.sonarResults.url
             if (sonarUrl) links[sca] = [[url: sonarUrl, label: 'SonarQube']]
         }
         if (ran.contains(state.stageResults[dast])) {
-            links[dast] = scanReportLinks(artifactBase, 'dast_file', 'dast_pdf', 'DAST', 'appscan-dast-report.html')
+            links[dast] = scanReportLinks(artifactBase, 'dast_file', 'dast_pdf', 'dast_hcl', 'DAST', 'appscan-dast-report.html')
         }
         if (ran.contains(state.stageResults[NIQ_STAGE])) {
             def niqUrl = state.nexusIqResults.url
@@ -169,13 +169,15 @@ abstract class AbstractHtmlReportService implements Serializable {
         return links
     }
 
-    protected List scanReportLinks(String artifactBase, String fileKey, String pdfKey, String label, String fallbackFile) {
+    protected List scanReportLinks(String artifactBase, String fileKey, String pdfKey, String consoleKey, String label, String fallbackFile) {
         def l = []
         state.projectsScanResults.each { pn, pr ->
             def file = pr?.get(fileKey)?.toString() ?: ''
             if (file) l << [url: "${artifactBase}${file}", label: "${label}: ${pn}"]
             def pdf = pdfKey ? (pr?.get(pdfKey)?.toString() ?: '') : ''
             if (pdf) l << [url: "${artifactBase}${pdf}", label: "${label} PDF: ${pn}"]
+            def console = consoleKey ? (pr?.get(consoleKey)?.toString() ?: '') : ''
+            if (console) l << [url: console, label: "HCL AppScan: ${pn}"]
         }
         if (!l) l << [url: "${artifactBase}${fallbackFile}", label: "${label} Report"]
         return l
@@ -341,7 +343,7 @@ abstract class AbstractHtmlReportService implements Serializable {
     @NonCPS protected String computePolicy(Map counts, Map limits) {
         def c = (counts?.get('critical') ?: 0) as int; def h = (counts?.get('high') ?: 0) as int; def m = (counts?.get('medium') ?: 0) as int
         def lc = (limits?.get('maxCritical') ?: 0) as int; def lh = (limits?.get('maxHigh') ?: 0) as int; def lm = (limits?.get('maxMedium') ?: 0) as int
-        return (c <= lc && h <= lh && m <= lm) ? 'PASS' : 'FAIL'
+        return (c <= lc && h <= lh && m <= lm) ? 'PASS' : 'WARN'
     }
 
     @NonCPS protected String testJobsHtml(List jobs) {
@@ -546,7 +548,7 @@ abstract class AbstractHtmlReportService implements Serializable {
         def sb = new StringBuilder()
         sb.append("<div style='background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #d97706;padding:8px 12px;font-size:0.85rem;color:#92400e;'>")
         sb.append("<b>The artifact was not released to Nexus and the deployment to QC is blocked.</b>")
-        sb.append("<div style='font-size:0.78rem;margin-top:2px;'>The project thresholds allowed the build to continue to the RD environment, but the library security policy is exceeded.</div></div>")
+        sb.append("<div style='font-size:0.78rem;margin-top:2px;'>Every stage was executed and the build reached the lower test region (RD), but at least one stage is marked orange. Fix the findings listed below to unblock the Nexus release and the QC deployment.</div></div>")
         if (violations) {
             sb.append("<ul style='margin:8px 0 0 18px;font-size:0.78rem;color:#475569;'>")
             violations.each { sb.append("<li>${esc(it as String)}</li>") }
@@ -608,9 +610,10 @@ abstract class AbstractHtmlReportService implements Serializable {
         sb.append("</tr>")
         return sb.toString()
     }
-    @NonCPS protected String reportLinksCell(String artifactBase, String reportFile, String pdfFile, String suffix) {
+    @NonCPS protected String reportLinksCell(String artifactBase, String reportFile, String pdfFile, String consoleUrl, String suffix) {
         def html = link("${artifactBase}${reportFile}", 'Report')
         if (pdfFile) html += " / " + link("${artifactBase}${pdfFile}", 'PDF', PDF_COLOR)
+        if (consoleUrl) html += " / " + link(consoleUrl, 'HCL AppScan')
         return html + (suffix ?: '')
     }
 
@@ -645,7 +648,8 @@ abstract class AbstractHtmlReportService implements Serializable {
         String policyStatus = (projScan.get(key) ?: computePolicy(counts, limits)) as String
         String reportFile = projScan.get("${key}_file")?.toString() ?: fallbackFile
         String pdfFile = pdfKey ? (projScan.get(pdfKey)?.toString() ?: '') : ''
-        return appscanRow(label, counts, limits, policyStatus, reportLinksCell(artifactBase, reportFile, pdfFile, suffix))
+        String consoleUrl = projScan.get("${key}_hcl")?.toString() ?: ''
+        return appscanRow(label, counts, limits, policyStatus, reportLinksCell(artifactBase, reportFile, pdfFile, consoleUrl, suffix))
     }
     @NonCPS protected String nexusIqProjectRow(Map niqCounts, Map projNiq, Map projScan, Map policyLimits, Map goldenFix) {
         Map limits = (policyLimits.get('niq') ?: [maxCritical: 0, maxHigh: 0, maxMedium: 0]) as Map
@@ -687,6 +691,15 @@ abstract class AbstractHtmlReportService implements Serializable {
         return sb.toString()
     }
 
+    @NonCPS protected String scanArtifactUrl(Map ctx, String key) {
+        Map all = (ctx.projectsScanResults ?: [:]) as Map
+        for (def entry : all.entrySet()) {
+            def value = ((entry.value ?: [:]) as Map).get(key)
+            if (value) return value as String
+        }
+        return ''
+    }
+
     @NonCPS protected String buildSingleProjectSecRows(Map ctx) {
         def sb = new StringBuilder()
         def stageResults = ctx.stageResults as Map
@@ -704,7 +717,7 @@ abstract class AbstractHtmlReportService implements Serializable {
             boolean ran = runStatuses.contains(stageStatus)
             Map counts = (vulnCounts.get(key) ?: [critical: 0, high: 0, medium: 0, low: 0]) as Map
             Map limits = (policyLimits.get(key) ?: [maxCritical: 0, maxHigh: 0, maxMedium: 0]) as Map
-            String policyStatus = (stageStatus == 'NOT_REQUIRED') ? 'NOT_REQUIRED' : ran ? policyStatusFor(key, vulnCounts, policyLimits) : 'FAIL'
+            String policyStatus = (stageStatus == 'NOT_REQUIRED') ? 'NOT_REQUIRED' : ran ? policyStatusFor(key, vulnCounts, policyLimits) : 'SKIP'
 
             sb.append("<tr>").append(scannerLabelCell(label, false))
             sb.append(ran ? vulnCell(counts.get('critical') as int, limits.get('maxCritical') as int) : dashTd())
@@ -712,8 +725,11 @@ abstract class AbstractHtmlReportService implements Serializable {
             sb.append(ran ? vulnCell(counts.get('medium') as int, limits.get('maxMedium') as int) : dashTd())
             sb.append(ran ? centerTd("${counts.get('low') ?: 0}") : dashTd())
             sb.append(centerTd(badge(policyStatus)))
+            String consoleUrl = scanArtifactUrl(ctx, "${key}_hcl")
             def reportCell = ran
-                    ? (link("${artifactBase}${file}", 'Report', LINK_COLOR, 'white-space:nowrap;') + (pdf ? " / " + link("${artifactBase}${pdf}", 'PDF', PDF_COLOR) : ''))
+                    ? (link("${artifactBase}${file}", 'Report', LINK_COLOR, 'white-space:nowrap;')
+                        + (pdf ? " / " + link("${artifactBase}${pdf}", 'PDF', PDF_COLOR) : '')
+                        + (consoleUrl ? " / " + link(consoleUrl, 'HCL AppScan') : ''))
                     : mutedDash()
             sb.append(td(reportCell, CELL_NOWRAP)).append("</tr>")
         }
@@ -728,7 +744,7 @@ abstract class AbstractHtmlReportService implements Serializable {
         Map results = (ctx.nexusIqResults ?: [:]) as Map
         Map limits  = ((ctx.policyLimits as Map).get('niq') ?: [maxCritical: 0, maxHigh: 0, maxMedium: 0]) as Map
         boolean ran = runStatuses.contains(((ctx.stageResults as Map).get(NIQ_STAGE) ?: 'SKIP') as String)
-        String status = ran ? ((results.get('status') ?: 'FAIL') as String) : 'FAIL'
+        String status = ran ? ((results.get('status') ?: 'SKIP') as String) : 'SKIP'
         String url    = (results.get('url') ?: '') as String
         String fixUrl = (results.get('fix_url') ?: '') as String
         def dashboard = url ? link(url, 'Dashboard') : mutedDash()
@@ -753,7 +769,7 @@ abstract class AbstractHtmlReportService implements Serializable {
         Map results = (ctx.sonarResults ?: [:]) as Map
         Map limits  = ((ctx.policyLimits as Map).get('sca') ?: [maxCritical: 0, maxHigh: 0]) as Map
         boolean ran = runStatuses.contains(((ctx.stageResults as Map).get('SCA (SonarQube)') ?: 'SKIP') as String)
-        String status = ran ? ((results.get('status') ?: 'FAIL') as String) : 'FAIL'
+        String status = ran ? ((results.get('status') ?: 'SKIP') as String) : 'SKIP'
         String url    = (results.get('url') ?: '') as String
         def dashboard = url ? link(url, 'Dashboard') : mutedDash()
 
@@ -832,11 +848,13 @@ abstract class AbstractHtmlReportService implements Serializable {
             if (projScan.containsKey('sast')) status = projScan.get('sast') as String
             counts = projVuln.get('sast') as Map
             if (projScan.get('sast_file')) links << [url: "${buildUrl}artifact/${projScan.get('sast_file')}", label: 'SAST Report']
+            if (projScan.get('sast_hcl')) links << [url: projScan.get('sast_hcl'), label: 'HCL AppScan']
         } else if (baseName.contains('DAST')) {
             if (projScan.containsKey('dast')) status = projScan.get('dast') as String
             counts = projVuln.get('dast') as Map
             if (projScan.get('dast_file')) links << [url: "${buildUrl}artifact/${projScan.get('dast_file')}", label: 'DAST Report']
             if (projScan.get('dast_pdf')) links << [url: "${buildUrl}artifact/${projScan.get('dast_pdf')}", label: 'DAST Report (PDF)']
+            if (projScan.get('dast_hcl')) links << [url: projScan.get('dast_hcl'), label: 'HCL AppScan']
         } else if (baseName.contains('Nexus IQ')) {
             if (projScan.containsKey('niq')) status = projScan.get('niq') as String
             counts = nexusIqBoxCounts(projNiq, projVuln)
@@ -886,10 +904,12 @@ abstract class AbstractHtmlReportService implements Serializable {
     @NonCPS protected String coverageLine(Map coverage) {
         boolean enabled = coverage?.get('enabled') ? true : false
         Double pct = enabled ? ((coverage.get('line') ?: 0.0) as double) : null
-        double minRequired = enabled ? ((coverage.get('minRequired') ?: 60) as double) : 60.0
-        def color = (pct != null && pct >= minRequired) ? '#16a34a' : '#dc2626'
-        def label = pct != null ? "${pct}%" : 'n/a'
-        return "<div style='margin-top:4px;display:flex;align-items:center;gap:8px;padding-left:25px;'><span style='font-size:1.05rem;font-weight:800;color:${color};'>${label}</span><span style='font-size:0.72rem;color:#64748b;'>line coverage &bull; min&nbsp;<b>${minRequired as int}%</b></span></div>"
+        double minRequired = ((coverage?.get('minRequired') ?: 60) as double)
+        boolean met = pct != null && pct >= minRequired
+        def color = met ? '#16a34a' : '#d97706'
+        def label = pct != null ? "${pct}%" : 'not measured'
+        def note = met ? '' : "<span style='font-size:0.68rem;color:#92400e;font-weight:700;'>below the required level</span>"
+        return "<div style='margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:25px;'><span style='font-size:1.05rem;font-weight:800;color:${color};'>${label}</span><span style='font-size:0.72rem;color:#64748b;'>line coverage &bull; required&nbsp;<b>${minRequired as int}%</b> (library policy)</span>${note}</div>"
     }
     @NonCPS protected String nexusIqLimitLine(Map counts, Map limits) {
         Map lim = limits ?: [maxCritical: 0, maxHigh: 0, maxMedium: 0]
@@ -904,7 +924,7 @@ abstract class AbstractHtmlReportService implements Serializable {
         def covered = coverage.get('covered') ?: 0
         def total = coverage.get('total') ?: 0
         def minRequired = coverage.get('minRequired') ?: 60
-        def color = (pct as double) >= (minRequired as double) ? '#22c55e' : '#ef4444'
+        def color = (pct as double) >= (minRequired as double) ? '#22c55e' : '#d97706'
         def width = (pct as double) > 100.0d ? 100.0d : (pct as double)
         def body = "<div style='display:flex;align-items:center;gap:12px;margin-bottom:6px;'><div style='font-size:1.6rem;font-weight:800;color:${color};min-width:70px;'>${pct}%</div><div style='flex:1;'><div style='background:#e2e8f0;border-radius:3px;height:12px;overflow:hidden;'><div style='width:${width}%;height:100%;background:${color};border-radius:3px;'></div></div><div style='margin-top:4px;font-size:0.72rem;color:#64748b;'>${covered} covered / ${total} total &nbsp;&bull;&nbsp; minimum: ${minRequired}%</div></div></div>"
         return card('Code Coverage', body)
