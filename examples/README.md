@@ -54,7 +54,7 @@ devSecOpsExtendedPipeline(
 )
 ```
 
-The library does not start the second job by itself. Chain the two jobs in Jenkins, for example with **Build after other projects are built** on the extended job, or start it manually. The extended job inherits the verdict of the static one through the copied `release-gate.json`, so findings from the static part still block the Nexus release and the QC deployment.
+The static job starts the extended one when its `RUN_EXTENDED_PIPELINE` parameter is selected. The job it starts is the one named in `jenkins.pipeline.extendedPipeline` of `config.yaml`, and it is started after the static job finishes, also when that job ended unstable. The extended job inherits the verdict of the static one through the copied `release-gate.json`, so findings from the static part still block the Nexus release and the QC deployment.
 
 ## What the thresholds are
 

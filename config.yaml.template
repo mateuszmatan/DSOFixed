@@ -6,6 +6,10 @@ projects:
     deployTarget: vm
     sourceDir:    "."
 
+    jenkins:
+      pipeline:
+        extendedPipeline: "MyApp/MyApp-extended-pipeline"   # started by the static pipeline when RUN_EXTENDED_PIPELINE is selected
+
     asoc:
       url:         "https://bbh.cloud.appscan.com"
       keyId:       "bbh_b81fbc9f-39c1-8eb4-38b5-b702268969b9"

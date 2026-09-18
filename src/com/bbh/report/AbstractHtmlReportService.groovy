@@ -763,11 +763,15 @@ abstract class AbstractHtmlReportService implements Serializable {
             sb.append(td(reportCell, CELL_NOWRAP)).append("</tr>")
         }
 
-        if (script.env.Security_Pipeline == null) {
+        if (showScannerSummaryRows()) {
             sb.append(nexusIqSingleRow(ctx))
             sb.append(sonarSingleRow(ctx))
         }
         return sb.toString()
+    }
+
+    @NonCPS protected boolean showScannerSummaryRows() {
+        return script.env.Security_Pipeline == null
     }
     @NonCPS protected String nexusIqSingleRow(Map ctx) {
         Map results = (ctx.nexusIqResults ?: [:]) as Map

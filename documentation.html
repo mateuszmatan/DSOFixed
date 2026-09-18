@@ -96,8 +96,9 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
   <table>
     <tr><th>Entry point</th><th>Runs</th><th>Use it when</th></tr>
     <tr><td><code>devSecOpsPipeline</code></td><td>All thirteen stages in one build</td><td>One job should cover the whole flow</td></tr>
-    <tr><td><code>devSecOpsSecurityPipeline</code></td><td>Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery; archives <code>config.yaml</code> and the release gate verdict</td><td>The static part runs on every commit and the rest is a separate job</td></tr>
+    <tr><td><code>devSecOpsSecurityPipeline</code></td><td>Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery; archives <code>config.yaml</code> and the release gate verdict, and triggers the extended job when <code>RUN_EXTENDED_PIPELINE</code> is selected</td><td>The static part runs on every commit and the rest is a separate job</td></tr>
     <tr><td><code>devSecOpsExtendedPipeline</code></td><td>RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment</td><td>Downstream of the security pipeline, named in <code>securityPipeline:</code>, inherits the verdict through the copied <code>release-gate.json</code></td></tr>
+    <tr><td><code>devSecOpsSASTScanningPipeline</code></td><td>Monitor sources and SAST only</td><td>A job that runs just the AppScan static scan; its report shows only the SAST stage and the SAST findings</td></tr>
   </table>
 
   <h3>After every build the library</h3>
@@ -130,10 +131,12 @@ pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size
 <div class="section">
   <h2><span class="num">3</span> Architecture overview</h2>
 <pre><code>vars/
-├── devSecOpsPipeline.groovy            <span class="yaml-cm"># full pipeline</span>
-├── devSecOpsSecurityPipeline.groovy    <span class="yaml-cm"># build, scans, snapshot delivery, triggers the extended pipeline</span>
-├── devSecOpsExtendedPipeline.groovy    <span class="yaml-cm"># deploy, tests, DAST, release delivery</span>
-└── devSecOpsSASTScanningPipeline.groovy
+├── devSecOpsApi.groovy                 <span class="yaml-cm"># service wiring and every helper method</span>
+├── devSecOpsSteps.groovy               <span class="yaml-cm"># one method per stage, shared by all entry points</span>
+├── devSecOpsPipeline.groovy            <span class="yaml-cm"># entry point: all thirteen stages</span>
+├── devSecOpsSecurityPipeline.groovy    <span class="yaml-cm"># entry point: static analysis, triggers the extended pipeline</span>
+├── devSecOpsExtendedPipeline.groovy    <span class="yaml-cm"># entry point: deploy, tests, DAST, release delivery</span>
+└── devSecOpsSASTScanningPipeline.groovy <span class="yaml-cm"># entry point: SAST only</span>
 
 src/com/bbh/
 ├── build/BuildService.groovy           <span class="yaml-cm"># build, unit tests, coverage, test job execution</span>
@@ -182,6 +185,21 @@ src/com/bbh/
     <tr><td>Copy Artifact</td><td>Passing <code>config.yaml</code> and the release gate verdict to the extended pipeline</td></tr>
     <tr><td>OpenShift Client (optional)</td><td><code>openshift.withCluster()</code></td></tr>
   </table>
+
+  <h3>Steps the library calls</h3>
+  <p>Besides the standard pipeline steps, the library calls the following. A missing one fails the stage that uses it, so check them when onboarding a new Jenkins instance.</p>
+  <table>
+    <tr><th>Step</th><th>Provided by</th><th>Used for</th></tr>
+    <tr><td><code>nexusPolicyEvaluation</code>, <code>selectedApplication</code></td><td>Nexus Platform plugin</td><td>Dependency scan</td></tr>
+    <tr><td><code>withSonarQubeEnv</code>, <code>waitForQualityGate</code></td><td>SonarQube Scanner plugin</td><td>SonarQube analysis and quality gate</td></tr>
+    <tr><td><code>triggerRemoteJob</code></td><td>Parameterized Remote Trigger plugin</td><td>Remote smoke, regression and performance jobs</td></tr>
+    <tr><td><code>copyArtifacts</code>, <code>lastSuccessful</code></td><td>Copy Artifact plugin</td><td>Passing config and the release gate verdict downstream</td></tr>
+    <tr><td><code>publishHTML</code>, <code>junit</code></td><td>HTML Publisher, JUnit</td><td>Pipeline report and test results</td></tr>
+    <tr><td><code>readYaml</code>, <code>readJSON</code>, <code>writeJSON</code>, <code>findFiles</code></td><td>Pipeline Utility Steps plugin</td><td>Configuration and report state</td></tr>
+    <tr><td><code>openshift</code>, <code>sshagent</code>, <code>git</code></td><td>OpenShift Client, SSH Agent, Git</td><td>Deployment, GoldenFix push, checkout</td></tr>
+    <tr><td><code>reportBuild</code>, <code>reportUnitTest</code>, <code>reportSurefireTest</code>, <code>addSonarBadgesToDescription</code></td><td><strong>Global steps of the BBH Jenkins installation</strong></td><td>Build reporting and SonarQube badges</td></tr>
+  </table>
+  <p>The last row is not a public plugin. Those four steps must exist as global variables in the Jenkins instance, otherwise the Nexus delivery and SonarQube stages fail.</p>
 
   <div class="callout info">
     <span class="callout-icon">i</span>
@@ -449,9 +467,14 @@ src/com/bbh/
 
 <div class="section">
   <h2><span class="num">12</span> Advanced — using library methods directly</h2>
+  <p>The methods below live on <code>devSecOpsApi</code>, the global variable that wires the services together. The four entry points are thin declarative skeletons built on it and on <code>devSecOpsSteps</code>, which holds one method per stage, so a custom Jenkinsfile can reuse either level.</p>
   <table>
     <tr><th>Method</th><th>Description</th></tr>
-    <tr><td><code>initialize()</code></td><td>Load config, apply the library policy, detect OS</td></tr>
+    <tr><td><code>initialize()</code></td><td>Set the tool environment variables, load config, apply the library policy, detect OS</td></tr>
+    <tr><td><code>configure(String variant, Map config)</code></td><td>Select the report variant (full, security, extended, sast) and keep the entry point configuration</td></tr>
+    <tr><td><code>runStage(String name, Closure body)</code></td><td>Run a stage body with the bookkeeping: start, result, duration, and a red stage on an exception</td></tr>
+    <tr><td><code>eachProject(Closure body)</code></td><td>Run the body once per configured project, switching the project context first</td></tr>
+    <tr><td><code>finishPipeline(Map options)</code></td><td>Report, release gate verdict, metrics, artifact archiving and workspace cleanup in one call</td></tr>
     <tr><td><code>appscanSetup()</code>, <code>appscanLogin()</code></td><td>Install SAClientUtil, authenticate the CLI</td></tr>
     <tr><td><code>appscanResolveSourceDir(String path = null)</code>, <code>appscanGenerateIRX(int timeoutMin = 120)</code></td><td>Prepare the IRX archive</td></tr>
     <tr><td><code>appscanQueue(Map config)</code>, <code>appscanWait()</code>, <code>appscanDownloadReports()</code></td><td>Queue the SAST scan, wait, download the report</td></tr>
@@ -573,7 +596,7 @@ src/com/bbh/
     projectNames: <span class="str">'gui,backend-api'</span>,
     agentNames:   [<span class="str">'linux-agent'</span>, <span class="str">'windows-agent'</span>]
 )</code></pre>
-  <p>Use <code>devSecOpsSecurityPipeline</code> plus <code>devSecOpsExtendedPipeline</code> instead when the static part should run on every commit and the rest in a separate job. The extended job takes <code>securityPipeline: '&lt;name of the static job&gt;'</code> and copies <code>config.yaml</code> and <code>release-gate.json</code> from it; chain the two jobs in Jenkins, the library does not start the second one by itself. A complete example of both is in <code>examples/README.md</code>.</p>
+  <p>Use <code>devSecOpsSecurityPipeline</code> plus <code>devSecOpsExtendedPipeline</code> instead when the static part should run on every commit and the rest in a separate job. The extended job takes <code>securityPipeline: '&lt;name of the static job&gt;'</code> and copies <code>config.yaml</code> and <code>release-gate.json</code> from it. The static job starts the extended one when the <code>RUN_EXTENDED_PIPELINE</code> parameter is selected, using the job name from <code>jenkins.pipeline.extendedPipeline</code> of <code>config.yaml</code>. A complete example of both is in <code>examples/README.md</code>.</p>
 
   <h3>Step 6 — Create the Jenkins job</h3>
   <p>A Pipeline job with <strong>Pipeline script from SCM</strong>, your Git repository, your branch and the script path <code>Jenkinsfile</code>. Nothing else has to be configured.</p>

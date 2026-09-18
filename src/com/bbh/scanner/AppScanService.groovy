@@ -28,13 +28,13 @@ _OPTS="$APPSCAN_OPTS -Dhttp.proxyPassword=$_PP -Dhttps.proxyPassword=$_PP"'''
     }
 
     void setup() {
-        def wSymLink = os.createSymbolLinkForWorkspaceIfNeeded()
-        script.env.APPSCAN_HOST = 'bbh.cloud.appscan.com'
-        script.env.APPSCAN_SERVER_URL = 'https://bbh.cloud.appscan.com'
-        script.env.APPSCAN_TOOLS_DIR = "${wSymLink}/.appscan-tools"
-        script.env.APPSCAN_LOG_DIR = "${wSymLink}/.appscan-logs"
-        script.env.APPSCAN_HOME_DIR = "${wSymLink}/.appscan-home"
-        script.env.APPSCAN_BIN_DIR = "${wSymLink}/.appscan-bin"
+        String workspace = (script.env.WORKSPACE ?: script.pwd()) as String
+        script.env.APPSCAN_HOST = script.env.APPSCAN_HOST ?: 'bbh.cloud.appscan.com'
+        script.env.APPSCAN_SERVER_URL = script.env.APPSCAN_SERVER_URL ?: 'https://bbh.cloud.appscan.com'
+        script.env.APPSCAN_TOOLS_DIR = script.env.APPSCAN_TOOLS_DIR ?: "${workspace}/.appscan-tools"
+        script.env.APPSCAN_LOG_DIR = script.env.APPSCAN_LOG_DIR ?: "${workspace}/.appscan-logs"
+        script.env.APPSCAN_HOME_DIR = script.env.APPSCAN_HOME_DIR ?: "${workspace}/.appscan-home"
+        script.env.APPSCAN_BIN_DIR = script.env.APPSCAN_BIN_DIR ?: "${workspace}/.appscan-bin"
 
         loadCertsFromResources()
         fetchProxyPassword()

@@ -52,8 +52,9 @@ The library ships three entry points. They share the same services, thresholds, 
 | Entry point | Runs | Use it when |
 |-------------|------|-------------|
 | `devSecOpsPipeline` | All thirteen stages in one build: unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery, RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment | One job should cover the whole flow |
-| `devSecOpsSecurityPipeline` | Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery; archives `config.yaml` and the release gate verdict | The static part runs on every commit and the rest is a separate job |
+| `devSecOpsSecurityPipeline` | Unit tests, Nexus IQ, SAST, SonarQube, snapshot delivery; archives `config.yaml` and the release gate verdict, and triggers the extended job when `RUN_EXTENDED_PIPELINE` is selected | The static part runs on every commit and the rest is a separate job |
 | `devSecOpsExtendedPipeline` | RD deployment, regression, smoke, performance, DAST, release delivery, QC deployment | Downstream of the security pipeline; name that job in `securityPipeline:` and it inherits the release verdict through the copied `release-gate.json` |
+| `devSecOpsSASTScanningPipeline` | Monitor sources and SAST only | A job that runs just the AppScan static scan; its report shows only the SAST stage and the SAST findings |
 
 After all stages, the library always:
 - Generates an HTML pipeline report with the stage flow, vulnerability counts, policy status, SonarQube badges and coverage
@@ -119,7 +120,12 @@ DevSecOpsJenkinsLibrary/           <- library repository root
 ├── resources/
 │   └── defaults.yaml              <- embedded non-overridable defaults (read via libraryResource)
 ├── vars/
-│   └── devSecOpsPipeline.groovy   <- single entry point + all helper methods
+│   ├── devSecOpsApi.groovy        <- service wiring, every helper method, stage and pipeline plumbing
+│   ├── devSecOpsSteps.groovy      <- one method per stage, shared by all entry points
+│   ├── devSecOpsApi.groovy   <- entry point: all thirteen stages
+│   ├── devSecOpsSecurityPipeline.groovy       <- entry point: static analysis part
+│   ├── devSecOpsExtendedPipeline.groovy       <- entry point: deployment and test part
+│   └── devSecOpsSASTScanningPipeline.groovy   <- entry point: SAST only
 └── src/com/bbh/
     ├── build/BuildService.groovy
     ├── config/ConfigLoader.groovy
@@ -184,6 +190,26 @@ The Jenkins controller and build agents must have the following installed and co
 | Credentials Binding | `withCredentials` for Nexus IQ, ASoC, Bitbucket, remote Jenkins |
 | Copy Artifact | Passing `config.yaml` and `release-gate.json` to the extended pipeline |
 | OpenShift Client (optional) | OpenShift `openshift.withCluster()` |
+
+### Steps the library calls
+
+Besides the standard pipeline steps, the library calls the following. A missing one fails the stage that uses it, so check them when onboarding a new Jenkins instance.
+
+| Step | Provided by | Used for |
+|------|-------------|----------|
+| `nexusPolicyEvaluation`, `selectedApplication` | Nexus Platform plugin | Dependency scan |
+| `withSonarQubeEnv`, `waitForQualityGate` | SonarQube Scanner plugin | SonarQube analysis and quality gate |
+| `triggerRemoteJob` | Parameterized Remote Trigger plugin | Remote smoke, regression and performance jobs |
+| `copyArtifacts`, `lastSuccessful` | Copy Artifact plugin | Passing `config.yaml` and the release gate verdict downstream |
+| `publishHTML` | HTML Publisher plugin | Publishing the pipeline report |
+| `junit` | JUnit plugin | Unit test results |
+| `readYaml`, `readJSON`, `writeJSON`, `findFiles` | Pipeline Utility Steps plugin | Configuration and report state |
+| `openshift` | OpenShift Client plugin | OpenShift deployment |
+| `sshagent` | SSH Agent plugin | Pushing the GoldenFix branch |
+| `git`, `checkout` | Git plugin | Source checkout |
+| `reportBuild`, `reportUnitTest`, `reportSurefireTest`, `addSonarBadgesToDescription` | **Global steps of the BBH Jenkins installation** | Build reporting and SonarQube badges |
+
+The last row is not a public plugin. Those four steps must exist as global variables in the Jenkins instance, otherwise the Nexus delivery and SonarQube stages fail.
 
 ### Agent tools
 
@@ -658,7 +684,7 @@ The required coverage is shown in the report exactly as configured in `resources
 
 ## 12. Advanced: using library methods directly
 
-If the standard pipeline does not fit your project structure, you can call individual library methods from a custom Jenkinsfile. Import the library and use `devSecOpsPipeline` as an object:
+If the standard pipeline does not fit your project structure, you can call individual library methods from a custom Jenkinsfile. Import the library and use `devSecOpsApi`, the global variable that holds the services and every helper method. The four entry points are thin declarative skeletons built on top of it and on `devSecOpsSteps`, which carries one method per stage.
 
 ```groovy
 @Library('DevSecOpsJenkinsLibrary') _
@@ -684,15 +710,15 @@ pipeline {
             steps {
                 script {
                     checkout scm
-                    devSecOpsPipeline.initialize()
-                    devSecOpsPipeline.appscanSetup()
-                    def projects = devSecOpsPipeline.getProjects()
+                    devSecOpsApi.initialize()
+                    devSecOpsApi.appscanSetup()
+                    def projects = devSecOpsApi.getProjects()
                     for (p in projects) {
-                        devSecOpsPipeline.switchProject(p)
-                        devSecOpsPipeline.appscanResolveSourceDir()
-                        devSecOpsPipeline.appscanGenerateIRX()
+                        devSecOpsApi.switchProject(p)
+                        devSecOpsApi.appscanResolveSourceDir()
+                        devSecOpsApi.appscanGenerateIRX()
                     }
-                    devSecOpsPipeline.appscanLogin()
+                    devSecOpsApi.appscanLogin()
                 }
             }
         }
@@ -700,11 +726,11 @@ pipeline {
         stage('Build and test') {
             steps {
                 script {
-                    devSecOpsPipeline.buildArtifact()
-                    devSecOpsPipeline.unitTests()
-                    devSecOpsPipeline.checkCoverage()
-                    devSecOpsPipeline.depVulnScan()
-                    devSecOpsPipeline.codeQualityScan()
+                    devSecOpsApi.buildArtifact()
+                    devSecOpsApi.unitTests()
+                    devSecOpsApi.checkCoverage()
+                    devSecOpsApi.depVulnScan()
+                    devSecOpsApi.codeQualityScan()
                 }
             }
         }
@@ -713,19 +739,26 @@ pipeline {
     post {
         always {
             script {
-                devSecOpsPipeline.generateHtmlReport()
-                devSecOpsPipeline.feedInfluxDB()
+                devSecOpsApi.generateHtmlReport()
+                devSecOpsApi.feedInfluxDB()
             }
         }
     }
 }
 ```
 
+The tool environment variables such as `APPSCAN_SERVER_URL` or the proxy settings are set by `initialize()`, so the `environment` block above is needed only when you want different values.
+
 ### Complete method reference
 
 | Method | Description |
 |--------|-------------|
-| `initialize()` | Load config, apply the library policy, detect OS |
+| `initialize()` | Set the tool environment variables, load config, apply the library policy, detect OS |
+| `configure(String variant, Map config)` | Select the report variant (`full`, `security`, `extended`, `sast`) and keep the entry point configuration |
+| `runStage(String name, Closure body)` | Run a stage body with the bookkeeping: start, result, duration, and a red stage on an exception |
+| `eachProject(Closure body)` | Run the body once per configured project, switching the project context first |
+| `finishPipeline(Map options)` | Report, release gate verdict, metrics, artifact archiving and workspace cleanup in one call |
+| `deployTarget()` | `vm` or `openshift` for the current project |
 | `appscanSetup()` | Download and extract SAClientUtil |
 | `appscanLogin()` | Authenticate the AppScan CLI |
 | `appscanResolveSourceDir(String path = null)` | Set the IRX source directory |
@@ -955,7 +988,7 @@ devSecOpsPipeline(
 )
 ```
 
-Use `devSecOpsSecurityPipeline` plus `devSecOpsExtendedPipeline` instead when the static part should run on every commit and the rest in a separate job. The extended job takes `securityPipeline: '<name of the static job>'` and copies `config.yaml` and `release-gate.json` from it. Chain the two jobs in Jenkins, the library does not start the second one by itself. A complete example of both is in `examples/README.md`.
+Use `devSecOpsSecurityPipeline` plus `devSecOpsExtendedPipeline` instead when the static part should run on every commit and the rest in a separate job. The extended job takes `securityPipeline: '<name of the static job>'` and copies `config.yaml` and `release-gate.json` from it. The static job starts the extended one when the `RUN_EXTENDED_PIPELINE` parameter is selected, using the job name from `jenkins.pipeline.extendedPipeline` of `config.yaml`. A complete example of both is in `examples/README.md`.
 
 ### Step 6 – Create the Jenkins job
 

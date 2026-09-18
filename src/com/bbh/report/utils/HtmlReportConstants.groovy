@@ -83,4 +83,19 @@ class HtmlReportConstants implements Serializable {
     ]
 
     static final reportsToParse = ['sast', 'dast']
+
+    static final sastAppscanScnrs = [
+            [key: 'sast', label: 'SAST (AppScan)', file: 'appscan-report.html', stage: SAST]
+    ]
+
+    static final sastStageOrder = [MONITOR, SAST]
+
+    static final sastSecStageNames = [SAST]
+
+    static final sastPhaseGroups = [
+            [label: 'Dev',                  color: '#3b82f6', stages: [MONITOR]],
+            [label: 'Static security scan', color: '#2563eb', stages: [SAST]]
+    ]
+
+    static final sastReportsToParse = ['sast']
 }
