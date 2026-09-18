@@ -3,12 +3,9 @@ package com.bbh.scanner
 import com.bbh.build.BuildRunnerWrapper
 import com.bbh.core.OsHelper
 import com.bbh.core.PipelineState
-import com.bbh.core.PolicyEngine
 import com.bbh.build.BuildService
 
 class SonarService implements Serializable {
-
-    static final String SCA_STAGE = 'SCA (SonarQube)'
 
     private final def         script
     private final PipelineState state
@@ -77,8 +74,8 @@ class SonarService implements Serializable {
             state.policyStatus['sonar']  = 'WARN'
             state.recordSonar('WARN')
             state.recordScan('sonar', 'WARN')
-            state.stageWarn(SCA_STAGE)
-            state.stageError(SCA_STAGE, "${scaFailReason}. ${PolicyEngine.BLOCK_NOTE}")
+            state.stageWarn('SCA (SonarQube)')
+            state.stageError('SCA (SonarQube)', scaFailReason)
             script.unstable(scaFailReason)
             return
         }

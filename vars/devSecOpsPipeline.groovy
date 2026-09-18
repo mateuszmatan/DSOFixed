@@ -476,10 +476,10 @@ def call(Map config = [:]) {
         post {
             always {
                 script {
-                    try { dsl.publishReleaseGate() }
-                    catch (Throwable t) { echo "[WARN] Could not write the release gate state: ${t.message}" }
                     try { dsl.generateHtmlReport() }
                     catch (Throwable t) { echo "[WARN] Could not generate HTML report: ${t.message}" }
+                    try { dsl.publishReleaseGate() }
+                    catch (Throwable t) { echo "[WARN] Could not write the release gate state: ${t.message}" }
                     try { dsl.feedInfluxDB("") }
                     catch (Throwable t) { echo "[WARN] Could not feed InfluxDB metrics: ${t.message}" }
                     if (!fileExists('report/pipeline-report.html')) {

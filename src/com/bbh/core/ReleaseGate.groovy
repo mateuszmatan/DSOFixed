@@ -5,8 +5,6 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class ReleaseGate implements Serializable {
 
-    static final List GREEN_STATUSES = ['PASS', 'NOT_REQUIRED', 'SKIP']
-
     private final def           script
     private final PipelineState state
 
@@ -62,8 +60,9 @@ class ReleaseGate implements Serializable {
 
     List stageViolations() {
         List out = []
+        List green = ['PASS', 'NOT_REQUIRED', 'SKIP']
         (state.stageResults ?: [:]).each { name, status ->
-            if (!GREEN_STATUSES.contains(status as String)) {
+            if (!green.contains(status as String)) {
                 out << "stage '${name}' is ${status}".toString()
             }
         }
@@ -84,7 +83,7 @@ class ReleaseGate implements Serializable {
                 Map counts = ((byScanner ?: [:]) as Map).get(scanner) as Map
                 if (counts != null) {
                     Map limits = ((policyLimits ?: [:]).get(scanner) ?: [:]) as Map
-                    String label = (PolicyEngine.SCANNER_LABELS[scanner] ?: scanner) as String
+                    String label = PolicyEngine.scannerLabel(scanner as String)
                     violations.addAll(severityViolations(project as String, label, counts, limits))
                 }
             }

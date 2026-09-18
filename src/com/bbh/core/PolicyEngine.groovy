@@ -4,22 +4,6 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class PolicyEngine implements Serializable {
 
-    static final String BLOCK_NOTE = 'The Nexus release and the QC deployment stay blocked until this is fixed.'
-
-    static final Map SCANNER_LABELS = [
-            sast: 'SAST (AppScan)',
-            sca : 'SCA (SonarQube)',
-            niq : 'Dependencies (Nexus IQ)',
-            dast: 'DAST (AppScan)'
-    ]
-
-    static final Map STAGE_NAMES = [
-            sast: 'SAST - Static Application Security Tests - HCL AppScan',
-            sca : 'SCA (SonarQube)',
-            niq : 'Dependencies scan (Nexus IQ)',
-            dast: 'DAST - Dynamic Application Security Tests - HCL AppScan'
-    ]
-
     private final def           script
     private final PipelineState state
     private final OsHelper      os
@@ -28,6 +12,33 @@ class PolicyEngine implements Serializable {
         this.script = script
         this.state  = state
         this.os     = os
+    }
+
+    @NonCPS
+    static String blockNote() {
+        return 'The Nexus release and the QC deployment stay blocked until this is fixed.'
+    }
+
+    @NonCPS
+    static String scannerLabel(String key) {
+        Map labels = [
+                sast: 'SAST (AppScan)',
+                sca : 'SCA (SonarQube)',
+                niq : 'Dependencies (Nexus IQ)',
+                dast: 'DAST (AppScan)'
+        ]
+        return (labels[key] ?: key ?: '') as String
+    }
+
+    @NonCPS
+    static String stageNameFor(String key) {
+        Map names = [
+                sast: 'SAST - Static Application Security Tests - HCL AppScan',
+                sca : 'SCA (SonarQube)',
+                niq : 'Dependencies scan (Nexus IQ)',
+                dast: 'DAST - Dynamic Application Security Tests - HCL AppScan'
+        ]
+        return (names[key] ?: '') as String
     }
 
     void enforceScanner(String scannerKey) {
@@ -46,19 +57,19 @@ class PolicyEngine implements Serializable {
         if (violations) {
             state.policyStatus[scannerKey] = 'WARN'
             state.recordScan(scannerKey, 'WARN', reportFile)
-            warn(stageName, "${SCANNER_LABELS[scannerKey]} policy not met: ${violations.join(', ')}. ${BLOCK_NOTE}")
+            warn(stageName, "${scannerLabel(scannerKey)} policy not met: ${violations.join(', ')}.")
             return
         }
         state.policyStatus[scannerKey] = 'PASS'
         state.recordScan(scannerKey, 'PASS', reportFile)
-        script.echo "[POLICY] ${SCANNER_LABELS[scannerKey]}: policy satisfied."
+        script.echo "[POLICY] ${scannerLabel(scannerKey)}: policy satisfied."
     }
 
     void missingCoverage(String reason) {
         int required = (state.coverage.minRequired ?: 60) as int
         state.coverage.enabled = false
         state.policyStatus['coverage'] = 'WARN'
-        warn('Unit tests', "${reason} - the required ${required}% line coverage cannot be verified. ${BLOCK_NOTE}")
+        warn('Unit tests', "${reason} - the required ${required}% line coverage cannot be verified.")
     }
 
     void checkCoverage() {
@@ -71,7 +82,7 @@ class PolicyEngine implements Serializable {
         double line = (state.coverage.line ?: 0.0) as double
         if (line < (required as double)) {
             state.policyStatus['coverage'] = 'WARN'
-            warn(stageName, "Line coverage ${line}% is below the required ${required}%. ${BLOCK_NOTE}")
+            warn(stageName, "Line coverage ${line}% is below the required ${required}%.")
             return
         }
         state.policyStatus['coverage'] = 'PASS'
@@ -79,24 +90,25 @@ class PolicyEngine implements Serializable {
     }
 
     void warn(String stageName, String message) {
+        String reason = "${message} ${blockNote()}".toString()
         state.stageWarn(stageName)
-        state.stageError(stageName, message)
-        script.unstable("[POLICY] ${message}")
+        state.stageError(stageName, reason)
+        script.unstable("[POLICY] ${reason}")
     }
 
     @NonCPS
     List countViolations(Map counts, Map limits) {
         List violations = []
-        [['critical', 'maxCritical', 'critical'], ['high', 'maxHigh', 'high'], ['medium', 'maxMedium', 'medium']].each { entry ->
+        [['critical', 'maxCritical'], ['high', 'maxHigh'], ['medium', 'maxMedium']].each { entry ->
             int value = (counts[entry[0]] ?: 0) as int
             int limit = (limits[entry[1]] ?: 0) as int
-            if (value > limit) violations << "${entry[2]} ${value} of max ${limit}".toString()
+            if (value > limit) violations << "${entry[0]} ${value} of max ${limit}".toString()
         }
         return violations
     }
 
     String scannerStageName(String key) {
-        return STAGE_NAMES[key]
+        return stageNameFor(key)
     }
 
     String reportPath(String key) {
@@ -142,7 +154,7 @@ class PolicyEngine implements Serializable {
             state.policyStatus['sonar'] = 'WARN'
             state.recordSonar('WARN')
             state.recordScan('sonar', 'WARN', reportFile)
-            warn(stageName, "SonarQube quality gate is ${status}. ${BLOCK_NOTE}")
+            warn(stageName, "SonarQube quality gate is ${status}.")
             return
         }
         state.sonarResults['status'] = 'PASS'

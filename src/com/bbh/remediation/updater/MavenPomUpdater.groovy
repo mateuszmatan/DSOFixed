@@ -7,13 +7,22 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class MavenPomUpdater implements ManifestUpdater {
 
-    private static final String DEPENDENCY_RE = '(?s)(<dependency\\s*>)(.*?)(</dependency\\s*>)'
-    private static final String VERSION_RE    = '(<version>\\s*)([^<]*?)(\\s*</version>)'
-    private static final String PROPERTIES_RE = '(?s)(<properties\\s*>)(.*?)(</properties\\s*>)'
-    private static final String EXCLUSIONS_RE = '(?s)<exclusions\\s*>.*?</exclusions\\s*>'
-    private static final String PROPERTY_REF_RE = '^\\$\\{([^}]+)\\}$'
+    @NonCPS
+    private static String dependencyRe() { return '(?s)(<dependency\\s*>)(.*?)(</dependency\\s*>)' }
 
-    String ecosystem() { return GoldenFix.MAVEN }
+    @NonCPS
+    private static String versionRe() { return '(<version>\\s*)([^<]*?)(\\s*</version>)' }
+
+    @NonCPS
+    private static String propertiesRe() { return '(?s)(<properties\\s*>)(.*?)(</properties\\s*>)' }
+
+    @NonCPS
+    private static String exclusionsRe() { return '(?s)<exclusions\\s*>.*?</exclusions\\s*>' }
+
+    @NonCPS
+    private static String propertyRefRe() { return '^\\$\\{([^}]+)\\}$' }
+
+    String ecosystem() { return 'maven' }
 
     List<String> filePatterns() { return ['pom.xml'] }
 
@@ -29,11 +38,11 @@ class MavenPomUpdater implements ManifestUpdater {
         List properties = []
         List notes = []
 
-        String updated = UpdaterSupport.replaceValue(content, DEPENDENCY_RE) { String block ->
-            String header = block.replaceAll(EXCLUSIONS_RE, '')
+        String updated = UpdaterSupport.replaceValue(content, dependencyRe()) { String block ->
+            String header = block.replaceAll(exclusionsRe(), '')
             String groupId = tag(header, 'groupId')
             String artifactId = tag(header, 'artifactId')
-            Map fix = (groupId && artifactId) ? byKey[GoldenFix.key(GoldenFix.MAVEN, groupId, artifactId)] as Map : null
+            Map fix = (groupId && artifactId) ? byKey[GoldenFix.key('maven', groupId, artifactId)] as Map : null
             if (!fix) return null
 
             String declared = tag(header, 'version')
@@ -54,7 +63,7 @@ class MavenPomUpdater implements ManifestUpdater {
             if (!VersionUtils.isUpgrade(declared, target)) return null
 
             changes << UpdaterSupport.change(relativePath, fix, declared, target)
-            return UpdaterSupport.replaceValue(block, VERSION_RE) { String value -> value == declared ? target : null }
+            return UpdaterSupport.replaceValue(block, versionRe()) { String value -> value == declared ? target : null }
         }
         return [content: updated, changes: changes, properties: properties, notes: notes]
     }
@@ -62,7 +71,7 @@ class MavenPomUpdater implements ManifestUpdater {
     @NonCPS
     Map updateProperties(String relativePath, String content, List<Map> properties) {
         List changes = []
-        String updated = UpdaterSupport.replaceValue(content, PROPERTIES_RE) { String section ->
+        String updated = UpdaterSupport.replaceValue(content, propertiesRe()) { String section ->
             String newSection = section
             properties.each { property ->
                 String name = property.name as String
@@ -87,7 +96,7 @@ class MavenPomUpdater implements ManifestUpdater {
 
     @NonCPS
     private static String propertyName(String declared) {
-        def matcher = (declared ?: '') =~ PROPERTY_REF_RE
+        def matcher = (declared ?: '') =~ propertyRefRe()
         return matcher ? ((matcher[0] as List)[1] as String) : null
     }
 }

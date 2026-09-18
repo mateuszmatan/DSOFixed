@@ -4,10 +4,29 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class BitbucketRepository implements Serializable {
 
-    private static final String CLOUD_RE  = /^https?:\/\/(?:[^@\/]+@)?(?:api\.)?bitbucket\.org\/(?:2\.0\/repositories\/)?([^\/]+)\/([^\/]+?)(?:\.git)?(?:\/.*)?$/
-    private static final String REST_RE   = /^(https?:\/\/.+?)\/rest\/api\/(?:1\.0|latest)\/(projects|users)\/([^\/]+)\/repos\/([^\/]+).*$/
-    private static final String BROWSE_RE = /^(https?:\/\/.+?)\/(projects|users)\/([^\/]+)\/repos\/([^\/?#]+).*$/
-    private static final String CLONE_RE  = /^(https?:\/\/)(?:[^@\/]+@)?(.+?)\/scm\/([^\/]+)\/([^\/]+?)(?:\.git)?$/
+    @NonCPS
+    private static String cloudRe() {
+        String re = /^https?:\/\/(?:[^@\/]+@)?(?:api\.)?bitbucket\.org\/(?:2\.0\/repositories\/)?([^\/]+)\/([^\/]+?)(?:\.git)?(?:\/.*)?$/
+        return re
+    }
+
+    @NonCPS
+    private static String restRe() {
+        String re = /^(https?:\/\/.+?)\/rest\/api\/(?:1\.0|latest)\/(projects|users)\/([^\/]+)\/repos\/([^\/]+).*$/
+        return re
+    }
+
+    @NonCPS
+    private static String browseRe() {
+        String re = /^(https?:\/\/.+?)\/(projects|users)\/([^\/]+)\/repos\/([^\/?#]+).*$/
+        return re
+    }
+
+    @NonCPS
+    private static String cloneRe() {
+        String re = /^(https?:\/\/)(?:[^@\/]+@)?(.+?)\/scm\/([^\/]+)\/([^\/]+?)(?:\.git)?$/
+        return re
+    }
 
     @NonCPS
     static Map parse(Map scmCfg) {
@@ -18,7 +37,7 @@ class BitbucketRepository implements Serializable {
 
     @NonCPS
     private static Map parseCloud(String url, Map scmCfg) {
-        List groups = firstMatch(url, CLOUD_RE)
+        List groups = firstMatch(url, cloudRe())
         String workspace = (scmCfg?.workspace ?: (groups ? groups[1] : null)) as String
         String slug      = (scmCfg?.repoSlug ?: (groups ? groups[2] : null)) as String
         if (!workspace || !slug) {
@@ -40,9 +59,9 @@ class BitbucketRepository implements Serializable {
         String project = null
         String slug = null
 
-        List rest = firstMatch(url, REST_RE)
-        List browse = firstMatch(url, BROWSE_RE)
-        List clone = firstMatch(url, CLONE_RE)
+        List rest = firstMatch(url, restRe())
+        List browse = firstMatch(url, browseRe())
+        List clone = firstMatch(url, cloneRe())
         if (rest) {
             base = rest[1]; project = projectKey(rest[2] as String, rest[3] as String); slug = rest[4]
         } else if (browse) {

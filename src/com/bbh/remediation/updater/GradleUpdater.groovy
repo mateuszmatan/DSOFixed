@@ -1,16 +1,18 @@
 package com.bbh.remediation.updater
 
-import com.bbh.remediation.model.GoldenFix
 import com.bbh.remediation.port.ManifestUpdater
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
 class GradleUpdater implements ManifestUpdater {
 
-    private static final String PROPERTY_REF_RE = '^\\$\\{?([A-Za-z_][\\w.]*)\\}?$'
-    private static final String TOML_VERSIONS_RE = '(?ms)(^\\[versions\\][ \\t]*$)((?:.|\\n)*?)(?=^\\[|\\z)'
+    @NonCPS
+    private static String propertyRefRe() { return '^\\$\\{?([A-Za-z_][\\w.]*)\\}?$' }
 
-    String ecosystem() { return GoldenFix.MAVEN }
+    @NonCPS
+    private static String tomlVersionsRe() { return '(?ms)(^\\[versions\\][ \\t]*$)((?:.|\\n)*?)(?=^\\[|\\z)' }
+
+    String ecosystem() { return 'maven' }
 
     List<String> filePatterns() { return ['build.gradle', 'build.gradle.kts', 'gradle.properties', '*.versions.toml'] }
 
@@ -71,7 +73,7 @@ class GradleUpdater implements ManifestUpdater {
             if (fileName == 'gradle.properties') {
                 updated = UpdaterSupport.replaceValue(updated, '(?m)(^[ \\t]*' + name + '[ \\t]*[=:][ \\t]*)([^\\s#]+)', 1, 2, 0, bump)
             } else if (fileName.endsWith('.versions.toml')) {
-                updated = UpdaterSupport.replaceValue(updated, TOML_VERSIONS_RE, 1, 2, 0) { String section ->
+                updated = UpdaterSupport.replaceValue(updated, tomlVersionsRe(), 1, 2, 0) { String section ->
                     String replaced = UpdaterSupport.replaceValue(section, '(?m)(^[ \\t]*"?' + name + '"?[ \\t]*=[ \\t]*")([^"]+)(")', bump)
                     return replaced == section ? null : replaced
                 }
@@ -88,7 +90,7 @@ class GradleUpdater implements ManifestUpdater {
 
     @NonCPS
     private static String handleDeclaredVersion(String path, Map fix, String declared, List changes, List properties, List notes) {
-        def reference = (declared ?: '') =~ PROPERTY_REF_RE
+        def reference = (declared ?: '') =~ propertyRefRe()
         if (reference) {
             String name = (reference[0] as List)[1] as String
             if (!name.startsWith('libs.')) {

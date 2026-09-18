@@ -9,14 +9,17 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class NexusIqGoldenFixSource implements GoldenFixSource {
 
-    static final List<String> DEFAULT_REMEDIATION_PREFERENCE = [
-            'recommended-non-breaking-with-dependencies',
-            'next-no-violations-with-dependencies',
-            'next-no-violations',
-            'recommended-non-breaking',
-            'next-non-failing-with-dependencies',
-            'next-non-failing'
-    ]
+    @NonCPS
+    static List<String> defaultRemediationPreference() {
+        return [
+                'recommended-non-breaking-with-dependencies',
+                'next-no-violations-with-dependencies',
+                'next-no-violations',
+                'recommended-non-breaking',
+                'next-non-failing-with-dependencies',
+                'next-non-failing'
+        ]
+    }
 
     private final def        script
     private final RestClient rest
@@ -36,8 +39,8 @@ class NexusIqGoldenFixSource implements GoldenFixSource {
         }
         int minThreat          = cfg.minThreatLevel != null ? cfg.minThreatLevel.toString().toInteger() : 2
         boolean onlyDirect     = BuildUtils.booleanValue(cfg.onlyDirectDependencies, true)
-        List ecosystems        = (cfg.ecosystems ?: GoldenFix.SUPPORTED_ECOSYSTEMS) as List
-        List preference        = (cfg.remediationPreference ?: DEFAULT_REMEDIATION_PREFERENCE) as List
+        List ecosystems        = (cfg.ecosystems ?: GoldenFix.supportedEcosystems()) as List
+        List preference        = (cfg.remediationPreference ?: defaultRemediationPreference()) as List
         String stageId         = (scanRef.stage ?: 'build') as String
         String credentialsId   = (scanRef.credentialsId ?: 'nexusiqP') as String
 
@@ -106,12 +109,12 @@ class NexusIqGoldenFixSource implements GoldenFixSource {
             Map coordinates = (identifier.coordinates ?: [:]) as Map
             String group = ''
             String name  = ''
-            if (format == GoldenFix.MAVEN) {
+            if (format == 'maven') {
                 group = coordinates.groupId as String
                 name  = coordinates.artifactId as String
-            } else if (format == GoldenFix.NPM) {
+            } else if (format == 'npm') {
                 name = coordinates.packageId as String
-            } else if (format == GoldenFix.PYPI) {
+            } else if (format == 'pypi') {
                 name = coordinates.name as String
             }
             String version = coordinates.version as String

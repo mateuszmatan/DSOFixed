@@ -6,8 +6,6 @@ import com.bbh.remediation.GoldenFixService
 
 class NexusIqService implements Serializable {
 
-    static final String NIQ_STAGE = 'Dependencies scan (Nexus IQ)'
-
     private final def         script
     private final PipelineState state
     private final PolicyEngine policy
@@ -21,6 +19,7 @@ class NexusIqService implements Serializable {
     }
 
     void scan() {
+        String niqStage  = policy.scannerStageName('niq')
         def niqCfg       = state.cfg.tools?.nexusIq ?: [:]
         Map<String, Map> apps = normalize(niqCfg) as Map<String, Map>
 
@@ -100,11 +99,16 @@ class NexusIqService implements Serializable {
                 state.recordNexusIq('WARN')
                 state.recordScan('niq', 'WARN')
                 if (goldenFix != null) {
-                    goldenFix.remediate(scanRefs)
-                    def gf = state.projectsGoldenFix[state.currentProjectName]
-                    if (gf?.prUrl) violMsg = "${violMsg} | GoldenFix pull request ${gf.prTitle} raised: ${gf.prUrl}"
+                    try {
+                        goldenFix.remediate(scanRefs)
+                        def gf = state.projectsGoldenFix[state.currentProjectName]
+                        if (gf?.prUrl) violMsg = "${violMsg} | GoldenFix pull request ${gf.prTitle} raised: ${gf.prUrl}"
+                    } catch (Throwable gfError) {
+                        if (gfError.getClass().getName().endsWith('FlowInterruptedException')) throw gfError
+                        script.echo "[GOLDENFIX] Remediation skipped: ${gfError.getClass().getSimpleName()}: ${gfError.message}"
+                    }
                 }
-                policy.warn(NIQ_STAGE, "${violMsg}. ${PolicyEngine.BLOCK_NOTE}")
+                policy.warn(niqStage, "${violMsg}.")
             } else {
                 state.nexusIqResults['status'] = 'PASS'
                 state.policyStatus['iast']     = 'PASS'
@@ -118,7 +122,7 @@ class NexusIqService implements Serializable {
             state.policyStatus['iast']     = 'WARN'
             state.recordNexusIq('WARN')
             state.recordScan('niq', 'WARN')
-            policy.warn(NIQ_STAGE, "Nexus IQ scan could not be completed: ${reason}. ${PolicyEngine.BLOCK_NOTE}")
+            policy.warn(niqStage, "Nexus IQ scan could not be completed: ${reason}.")
         }
     }
 

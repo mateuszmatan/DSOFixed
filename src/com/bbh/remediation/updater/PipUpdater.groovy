@@ -7,7 +7,7 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class PipUpdater implements ManifestUpdater {
 
-    String ecosystem() { return GoldenFix.PYPI }
+    String ecosystem() { return 'pypi' }
 
     List<String> filePatterns() { return ['requirements*.txt', 'constraints*.txt', 'pyproject.toml'] }
 

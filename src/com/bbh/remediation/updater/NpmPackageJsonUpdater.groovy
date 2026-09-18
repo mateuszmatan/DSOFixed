@@ -1,15 +1,17 @@
 package com.bbh.remediation.updater
 
-import com.bbh.remediation.model.GoldenFix
 import com.bbh.remediation.port.ManifestUpdater
 import com.bbh.utils.VersionUtils
 import com.cloudbees.groovy.cps.NonCPS
 
 class NpmPackageJsonUpdater implements ManifestUpdater {
 
-    private static final String SECTION_RE = '(?s)("(?:dependencies|devDependencies|peerDependencies|optionalDependencies)"\\s*:\\s*\\{)([^{}]*)(\\})'
+    @NonCPS
+    private static String sectionRe() {
+        return '(?s)("(?:dependencies|devDependencies|peerDependencies|optionalDependencies)"\\s*:\\s*\\{)([^{}]*)(\\})'
+    }
 
-    String ecosystem() { return GoldenFix.NPM }
+    String ecosystem() { return 'npm' }
 
     List<String> filePatterns() { return ['package.json'] }
 
@@ -24,7 +26,7 @@ class NpmPackageJsonUpdater implements ManifestUpdater {
         List changes = []
         List notes = []
 
-        String updated = UpdaterSupport.replaceValue(content, SECTION_RE) { String section ->
+        String updated = UpdaterSupport.replaceValue(content, sectionRe()) { String section ->
             String newSection = section
             fixes.each { fix ->
                 String name = UpdaterSupport.quote(fix.name as String)

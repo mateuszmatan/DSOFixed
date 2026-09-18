@@ -4,11 +4,10 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class GoldenFix implements Serializable {
 
-    static final String MAVEN = 'maven'
-    static final String NPM   = 'npm'
-    static final String PYPI  = 'pypi'
-
-    static final List<String> SUPPORTED_ECOSYSTEMS = [MAVEN, NPM, PYPI]
+    @NonCPS
+    static List<String> supportedEcosystems() {
+        return ['maven', 'npm', 'pypi']
+    }
 
     @NonCPS
     static Map create(String ecosystem, String group, String name, String currentVersion, String targetVersion,
@@ -32,15 +31,15 @@ class GoldenFix implements Serializable {
     @NonCPS
     static String key(String ecosystem, String group, String name) {
         switch (ecosystem) {
-            case PYPI: return "${PYPI}:${normalizePypiName(name)}".toString()
-            case NPM:  return "${NPM}:${(name ?: '').toLowerCase()}".toString()
-            default:   return "${MAVEN}:${group ?: ''}:${name ?: ''}".toString()
+            case 'pypi': return "pypi:${normalizePypiName(name)}".toString()
+            case 'npm':  return "npm:${(name ?: '').toLowerCase()}".toString()
+            default:     return "maven:${group ?: ''}:${name ?: ''}".toString()
         }
     }
 
     @NonCPS
     static String displayName(String ecosystem, String group, String name) {
-        return (ecosystem == MAVEN && group) ? "${group}:${name}".toString() : (name ?: '')
+        return (ecosystem == 'maven' && group) ? "${group}:${name}".toString() : (name ?: '')
     }
 
     @NonCPS

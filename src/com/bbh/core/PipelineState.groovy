@@ -45,10 +45,9 @@ class PipelineState implements Serializable {
     Map projectsGoldenFix         = [:]
     Map goldenFixPullRequest      = [:]
 
-    static final List KEPT_STATUSES = ['NOT_REQUIRED', 'BLOCKED', 'WARN', 'FAIL']
-
     void stagePass(String name) {
-        if (!KEPT_STATUSES.contains(stageResults[name] as String)) {
+        List kept = ['NOT_REQUIRED', 'BLOCKED', 'WARN', 'FAIL']
+        if (!kept.contains(stageResults[name] as String)) {
             stageResults[name] = 'PASS'
             stageErrors.remove(name)
         }

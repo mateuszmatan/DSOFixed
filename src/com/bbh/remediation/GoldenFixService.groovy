@@ -12,10 +12,11 @@ import com.cloudbees.groovy.cps.NonCPS
 
 class GoldenFixService implements Serializable {
 
-    static final List<String> DEFAULT_EXCLUDED_DIRS = [
-            '.git', 'node_modules', 'bower_components', 'target', 'build', '.gradle', 'dist',
-            'venv', '.venv', '__pycache__', '.tox', 'site-packages'
-    ]
+    @NonCPS
+    static List<String> defaultExcludedDirs() {
+        return ['.git', 'node_modules', 'bower_components', 'target', 'build', '.gradle', 'dist',
+                'venv', '.venv', '__pycache__', '.tox', 'site-packages']
+    }
 
     private final def                    script
     private final PipelineState          state
@@ -139,7 +140,7 @@ class GoldenFixService implements Serializable {
     }
 
     private Map applyFixes(String dir, List<Map> fixes, Map cfg) {
-        List<String> excluded = (cfg.excludeDirs ?: DEFAULT_EXCLUDED_DIRS) as List<String>
+        List<String> excluded = (cfg.excludeDirs ?: defaultExcludedDirs()) as List<String>
         List<ManifestUpdater> active = []
         List<String> patterns = []
         for (ManifestUpdater updater : updaters) {

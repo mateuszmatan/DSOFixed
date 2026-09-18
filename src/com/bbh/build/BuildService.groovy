@@ -277,7 +277,7 @@ class BuildService implements Serializable {
         List<Map> jobs = normalizeTestJobs(testCfg)
         if (!jobs) {
             state.recordTestJobs(stageName, [])
-            policy.warn(stageName, "${label}: no test jobs configured, at least one job is required in config.yaml. ${PolicyEngine.BLOCK_NOTE}")
+            policy.warn(stageName, "${label}: no test jobs configured, at least one job is required in config.yaml.")
             return
         }
 
@@ -321,7 +321,7 @@ class BuildService implements Serializable {
             String details = failedJobsMessage(failed, 10)
             String prefix  = state.projectsAllCfg.size() > 1 ? "${state.currentProjectName}: " : ''
             String summary2 = failed.size() == 1 ? details : "${failed.size()} of ${resultList.size()} job(s) failed: ${details}"
-            policy.warn(stageName, "${label} failed - ${prefix}${summary2}. ${PolicyEngine.BLOCK_NOTE}")
+            policy.warn(stageName, "${label} failed - ${prefix}${summary2}.")
         }
     }
 

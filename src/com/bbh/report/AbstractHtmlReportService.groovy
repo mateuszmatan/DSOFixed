@@ -54,6 +54,35 @@ abstract class AbstractHtmlReportService implements Serializable {
     }
 
     void generate() {
+        try {
+            generateFullReport()
+        } catch (Throwable t) {
+            script.echo "[REPORT] Full report could not be built (${t.getClass().getSimpleName()}: ${t.message}) - writing the minimal report"
+            writeMinimalReport(t)
+        }
+    }
+
+    protected void writeMinimalReport(Throwable cause) {
+        try {
+            StringBuilder rows = new StringBuilder()
+            (state.stageResults ?: [:]).each { name, status ->
+                String reason = (state.stageErrors ?: [:])?.get(name)?.toString() ?: ''
+                rows.append("<tr><td>${esc(name as String)}</td><td>${esc(status as String)}</td><td>${esc(reason)}</td></tr>")
+            }
+            String html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><title>Pipeline Report</title></head>" +
+                    "<body style='font-family:sans-serif;padding:24px;background:#f1f5f9;'>" +
+                    "<h2>Pipeline Report</h2>" +
+                    "<p style='color:#92400e;'>The full report could not be rendered: ${esc(cause?.message ?: '')}. The stage results are listed below.</p>" +
+                    "<table border='1' cellpadding='6' cellspacing='0'><thead><tr><th>Stage</th><th>Result</th><th>Reason</th></tr></thead>" +
+                    "<tbody>${rows.toString()}</tbody></table></body></html>"
+            script.writeFile file: "${script.env.WORKSPACE}/report/pipeline-report.html", text: html
+            script.echo "[REPORT] Minimal pipeline report written to pipeline-report.html"
+        } catch (Throwable t) {
+            script.echo "[REPORT] Even the minimal report could not be written: ${t.message}"
+        }
+    }
+
+    protected void generateFullReport() {
         def buildResult  = script.currentBuild.result ?: BuildResult.IN_PROGRESS.result
         def now          = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date())
         def buildUrl     = ((script.env.BUILD_URL ?: '').replaceAll('/+$', '')) + '/'
